@@ -1,0 +1,71 @@
+import { Request, Response } from "express";
+import { asyncHandler } from "../utils/asyncHandler";
+import { ApiResponse } from "../utils/ApiResponse";
+import { ApiError } from "../utils/ApiError";
+import { authService } from "../services/auth.service";
+import { userService } from "../services/user.service";
+
+const REFRESH_COOKIE_NAME = "refreshToken";
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
+function toPublicUser(user: { _id: unknown; name: string; email: string; role: string; avatarUrl: string | null }) {
+  return {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    avatarUrl: user.avatarUrl,
+  };
+}
+
+export const register = asyncHandler(async (req: Request, res: Response) => {
+  const user = await authService.bootstrapFirstAdmin(req.body);
+  res.status(201).json(new ApiResponse(201, toPublicUser(user), "Admin account created. Please log in."));
+});
+
+export const login = asyncHandler(async (req: Request, res: Response) => {
+  const { user, tokens } = await authService.login(req.body);
+  res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
+  res.json(
+    new ApiResponse(
+      200,
+      { user: toPublicUser(user), accessToken: tokens.accessToken },
+      "Logged in successfully"
+    )
+  );
+});
+
+export const refreshTokens = asyncHandler(async (req: Request, res: Response) => {
+  const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
+  if (!refreshToken) throw ApiError.unauthorized("No refresh token provided");
+
+  const tokens = await authService.refreshTokens(refreshToken);
+  res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
+  res.json(new ApiResponse(200, { accessToken: tokens.accessToken }, "Token refreshed"));
+});
+
+export const logout = asyncHandler(async (req: Request, res: Response) => {
+  if (req.user) await authService.logout(req.user.id);
+  res.clearCookie(REFRESH_COOKIE_NAME);
+  res.json(new ApiResponse(200, null, "Logged out"));
+});
+
+export const getMe = asyncHandler(async (req: Request, res: Response) => {
+  const user = await userService.getUserById(req.user!.id);
+  res.json(new ApiResponse(200, toPublicUser(user), "Current user"));
+});
+
+export const updateMe = asyncHandler(async (req: Request, res: Response) => {
+  const user = await userService.updateUser(req.user!.id, req.body);
+  res.json(new ApiResponse(200, toPublicUser(user), "Profile updated"));
+});
+
+export const changePassword = asyncHandler(async (req: Request, res: Response) => {
+  await authService.changePassword(req.user!.id, req.body.currentPassword, req.body.newPassword);
+  res.json(new ApiResponse(200, null, "Password changed"));
+});
