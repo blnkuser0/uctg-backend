@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { ApiError } from "../utils/ApiError";
 import { jwtService } from "../services/jwt.service";
 import { User } from "../models/User.model";
+import { IRole } from "../models/Role.model";
 
 export const auth = () => {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
@@ -16,7 +17,7 @@ export const auth = () => {
 
       const payload = jwtService.verifyAccessToken(token);
 
-      const user = await User.findById(payload.sub).lean();
+      const user = await User.findById(payload.sub).populate<{ roleId: IRole }>("roleId").lean();
       if (!user) {
         next(ApiError.unauthorized("User no longer exists"));
         return;
@@ -30,8 +31,9 @@ export const auth = () => {
         id: user._id.toString(),
         email: user.email,
         name: user.name,
-        role: user.role,
       };
+      req.orgId = user.organizationId.toString();
+      req.permissions = user.roleId?.permissions ?? [];
 
       next();
     } catch {

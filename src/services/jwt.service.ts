@@ -1,12 +1,10 @@
 import jwt, { SignOptions } from "jsonwebtoken";
 import { config } from "../config";
-import { UserRole } from "../models/User.model";
 
 export interface AccessTokenPayload {
   sub: string; // userId
   email: string;
   name: string;
-  role: UserRole;
 }
 
 export interface RefreshTokenPayload {

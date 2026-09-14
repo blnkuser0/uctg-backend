@@ -41,6 +41,14 @@ export function createSocketServer(httpServer: HttpServer): Server {
       if (typeof projectId === "string") socket.leave(`project:${projectId}`);
     });
 
+    socket.on("channel:subscribe", (channelId: string) => {
+      if (typeof channelId === "string") socket.join(`channel:${channelId}`);
+    });
+
+    socket.on("channel:unsubscribe", (channelId: string) => {
+      if (typeof channelId === "string") socket.leave(`channel:${channelId}`);
+    });
+
     socket.on("disconnect", () => {
       logger.debug({ userId: socket.userId, socketId: socket.id }, "Socket disconnected");
     });

@@ -1,22 +1,40 @@
 import request from "supertest";
 import { app } from "../src/server";
 
-const ADMIN = { name: "Ada Admin", email: "ada@ugnexa.test", password: "supersecret1" };
+const ADMIN = {
+  organizationName: "Fitout Co",
+  name: "Ada Admin",
+  email: "ada@ugnexa.test",
+  password: "supersecret1",
+};
 
 describe("Auth flow", () => {
-  it("bootstraps the first admin account", async () => {
+  it("registers a new organization with its first admin", async () => {
     const res = await request(app).post("/api/auth/register").send(ADMIN);
     expect(res.status).toBe(201);
-    expect(res.body.data.role).toBe("admin");
+    expect(res.body.data.role.name).toBe("Admin");
+    expect(res.body.data.role.permissions.length).toBeGreaterThan(0);
     expect(res.body.data.email).toBe(ADMIN.email);
+    expect(res.body.data.organizationId).toBeTruthy();
   });
 
-  it("rejects a second registration once an admin exists", async () => {
+  it("creates a separate, isolated organization on each registration", async () => {
+    const first = await request(app).post("/api/auth/register").send(ADMIN);
+    const second = await request(app)
+      .post("/api/auth/register")
+      .send({ ...ADMIN, organizationName: "Other Co", email: "someone-else@ugnexa.test" });
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(second.body.data.organizationId).not.toBe(first.body.data.organizationId);
+  });
+
+  it("rejects registering the same email twice", async () => {
     await request(app).post("/api/auth/register").send(ADMIN);
     const res = await request(app)
       .post("/api/auth/register")
-      .send({ ...ADMIN, email: "someone-else@ugnexa.test" });
-    expect(res.status).toBe(403);
+      .send({ ...ADMIN, organizationName: "Other Co" });
+    expect(res.status).toBe(409);
   });
 
   it("rejects login with the wrong password", async () => {

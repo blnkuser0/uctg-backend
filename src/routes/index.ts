@@ -1,10 +1,38 @@
 import { Router } from "express";
 import authRoute from "./auth.route";
 import userRoute from "./user.route";
+import timeLogRoute from "./timeLog.route";
+import leaveRoute from "./leave.route";
+import roleRoute from "./role.route";
+import projectRoute from "./project.route";
+import stageRoute from "./stage.route";
+import labelRoute from "./label.route";
+import taskRoute from "./task.route";
+import commentRoute from "./comment.route";
+import timeEntryRoute from "./timeEntry.route";
+import notificationRoute from "./notification.route";
+import myTasksRoute from "./myTasks.route";
+import mentionsRoute from "./mentions.route";
+import channelRoute from "./channel.route";
+import messageRoute from "./message.route";
 
 const router = Router();
 
 router.use("/auth", authRoute);
 router.use("/users", userRoute);
+router.use("/timeclock", timeLogRoute);
+router.use("/leaves", leaveRoute);
+router.use("/roles", roleRoute);
+router.use("/projects", projectRoute);
+router.use("/stages", stageRoute);
+router.use("/labels", labelRoute);
+router.use("/tasks", taskRoute);
+router.use("/comments", commentRoute);
+router.use("/time-entries", timeEntryRoute);
+router.use("/notifications", notificationRoute);
+router.use("/my-tasks", myTasksRoute);
+router.use("/mentions", mentionsRoute);
+router.use("/channels", channelRoute);
+router.use("/messages", messageRoute);
 
 export default router;

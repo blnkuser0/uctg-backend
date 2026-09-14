@@ -1,14 +1,12 @@
 import { Schema, model, Document, Types } from "mongoose";
 
-export const USER_ROLES = ["admin", "member"] as const;
-export type UserRole = (typeof USER_ROLES)[number];
-
 export interface IUser extends Document {
   _id: Types.ObjectId;
   name: string;
   email: string;
   passwordHash: string;
-  role: UserRole;
+  organizationId: Types.ObjectId;
+  roleId: Types.ObjectId;
   avatarUrl: string | null;
   isActive: boolean;
   tokenVersion: number;
@@ -29,7 +27,8 @@ const UserSchema = new Schema<IUser>(
       index: true,
     },
     passwordHash: { type: String, required: true, select: false },
-    role: { type: String, enum: USER_ROLES, default: "member", index: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
+    roleId: { type: Schema.Types.ObjectId, ref: "Role", required: true, index: true },
     avatarUrl: { type: String, default: null },
     isActive: { type: Boolean, default: true },
     tokenVersion: { type: Number, default: 0 },

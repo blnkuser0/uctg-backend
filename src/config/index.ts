@@ -8,6 +8,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(5001),
   CLIENT_URL: z.string().default("http://localhost:3000"),
+  BACKEND_URL: z.string().default("http://localhost:5001"),
 
   MONGO_URI: z.string().min(1, "MONGO_URI is required"),
 
@@ -36,6 +37,7 @@ export const config = {
   server: {
     port: env.PORT,
     clientUrl: env.CLIENT_URL,
+    backendUrl: env.BACKEND_URL,
   },
   mongo: {
     uri: env.MONGO_URI,

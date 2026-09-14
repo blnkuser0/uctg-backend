@@ -4,6 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse";
 import { ApiError } from "../utils/ApiError";
 import { authService } from "../services/auth.service";
 import { userService } from "../services/user.service";
+import { IRole } from "../models/Role.model";
 
 const REFRESH_COOKIE_NAME = "refreshToken";
 const REFRESH_COOKIE_OPTIONS = {
@@ -13,28 +14,46 @@ const REFRESH_COOKIE_OPTIONS = {
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
-function toPublicUser(user: { _id: unknown; name: string; email: string; role: string; avatarUrl: string | null }) {
+function toPublicUser(user: {
+  _id: unknown;
+  name: string;
+  email: string;
+  organizationId: unknown;
+  roleId: unknown;
+  avatarUrl: string | null;
+}) {
+  const isPopulated = !!user.roleId && typeof user.roleId === "object" && "name" in user.roleId;
+  const role = isPopulated
+    ? {
+        id: (user.roleId as IRole)._id,
+        name: (user.roleId as IRole).name,
+        permissions: (user.roleId as IRole).permissions,
+      }
+    : { id: user.roleId, name: null, permissions: [] };
+
   return {
     id: user._id,
     name: user.name,
     email: user.email,
-    role: user.role,
+    organizationId: user.organizationId,
+    role,
     avatarUrl: user.avatarUrl,
   };
 }
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
-  const user = await authService.bootstrapFirstAdmin(req.body);
-  res.status(201).json(new ApiResponse(201, toPublicUser(user), "Admin account created. Please log in."));
+  const user = await authService.registerOrganization(req.body);
+  res.status(201).json(new ApiResponse(201, toPublicUser(user), "Workspace created. Please log in."));
 });
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { user, tokens } = await authService.login(req.body);
+  const fullUser = await userService.getUserById(user._id.toString());
   res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
   res.json(
     new ApiResponse(
       200,
-      { user: toPublicUser(user), accessToken: tokens.accessToken },
+      { user: toPublicUser(fullUser), accessToken: tokens.accessToken },
       "Logged in successfully"
     )
   );
@@ -61,7 +80,7 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updateMe = asyncHandler(async (req: Request, res: Response) => {
-  const user = await userService.updateUser(req.user!.id, req.body);
+  const user = await userService.updateUser(req.user!.id, req.orgId!, req.body);
   res.json(new ApiResponse(200, toPublicUser(user), "Profile updated"));
 });
 

@@ -1,7 +1,12 @@
+import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import { User, IUser } from "../models/User.model";
+import { Organization } from "../models/Organization.model";
+import { Role } from "../models/Role.model";
+import { ALL_PERMISSIONS } from "../constants/permissions";
 import { jwtService } from "./jwt.service";
 import { ApiError } from "../utils/ApiError";
+import { slugify } from "../utils/slugify";
 
 const SALT_ROUNDS = 10;
 
@@ -15,7 +20,6 @@ function buildTokens(user: IUser): AuthTokens {
     sub: user._id.toString(),
     email: user.email,
     name: user.name,
-    role: user.role,
   });
   const refreshToken = jwtService.signRefreshToken({
     sub: user._id.toString(),
@@ -24,20 +28,71 @@ function buildTokens(user: IUser): AuthTokens {
   return { accessToken, refreshToken };
 }
 
-async function bootstrapFirstAdmin(input: { name: string; email: string; password: string }): Promise<IUser> {
-  const existingCount = await User.countDocuments();
-  if (existingCount > 0) {
-    throw ApiError.forbidden("Registration is closed. Ask an admin to create your account.");
+async function generateUniqueSlug(organizationName: string, session: mongoose.ClientSession): Promise<string> {
+  const base = slugify(organizationName);
+  let slug = base;
+  let attempt = 1;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const existing = await Organization.findOne({ slug }).session(session);
+    if (!existing) return slug;
+    attempt += 1;
+    slug = `${base}-${attempt}`;
+  }
+}
+
+async function registerOrganization(input: {
+  organizationName: string;
+  name: string;
+  email: string;
+  password: string;
+}): Promise<IUser> {
+  const existingUser = await User.findOne({ email: input.email });
+  if (existingUser) {
+    throw ApiError.conflict("A user with this email already exists");
   }
 
-  const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
-  const user = await User.create({
-    name: input.name,
-    email: input.email,
-    passwordHash,
-    role: "admin",
-  });
-  return user;
+  const session = await mongoose.startSession();
+  try {
+    let createdUser: IUser | null = null;
+
+    await session.withTransaction(async () => {
+      const slug = await generateUniqueSlug(input.organizationName, session);
+      const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
+
+      const [organization] = await Organization.create(
+        [{ name: input.organizationName, slug, createdBy: new mongoose.Types.ObjectId() }],
+        { session }
+      );
+
+      const [adminRole] = await Role.create(
+        [{ organizationId: organization._id, name: "Admin", permissions: ALL_PERMISSIONS }],
+        { session }
+      );
+
+      const [user] = await User.create(
+        [
+          {
+            name: input.name,
+            email: input.email,
+            passwordHash,
+            organizationId: organization._id,
+            roleId: adminRole._id,
+          },
+        ],
+        { session }
+      );
+
+      organization.createdBy = user._id;
+      await organization.save({ session });
+
+      createdUser = user;
+    });
+
+    return (await createdUser!.populate("roleId")) as unknown as IUser;
+  } finally {
+    await session.endSession();
+  }
 }
 
 async function login(input: { email: string; password: string }): Promise<{ user: IUser; tokens: AuthTokens }> {
@@ -96,7 +151,7 @@ async function changePassword(userId: string, currentPassword: string, newPasswo
 }
 
 export const authService = {
-  bootstrapFirstAdmin,
+  registerOrganization,
   login,
   refreshTokens,
   logout,

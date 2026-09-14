@@ -17,3 +17,7 @@ export function emitToUser(userId: string, event: string, payload: unknown): voi
 export function emitToProject(projectId: string, event: string, payload: unknown): void {
   ioInstance?.to(`project:${projectId}`).emit(event, payload);
 }
+
+export function emitToChannel(channelId: string, event: string, payload: unknown): void {
+  ioInstance?.to(`channel:${channelId}`).emit(event, payload);
+}
