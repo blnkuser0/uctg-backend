@@ -25,6 +25,9 @@ const envSchema = z.object({
 
   UPLOAD_DIR: z.string().default("uploads"),
   MAX_UPLOAD_SIZE_MB: z.coerce.number().default(25),
+
+  RESEND_API_KEY: z.string().default(""),
+  RESEND_FROM_EMAIL: z.string().default("Ugnexa Catalyst <onboarding@resend.dev>"),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -57,6 +60,10 @@ export const config = {
   uploads: {
     dir: env.UPLOAD_DIR,
     maxSizeMb: env.MAX_UPLOAD_SIZE_MB,
+  },
+  resend: {
+    apiKey: env.RESEND_API_KEY,
+    fromEmail: env.RESEND_FROM_EMAIL,
   },
 };
 

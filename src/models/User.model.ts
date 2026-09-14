@@ -11,6 +11,8 @@ export interface IUser extends Document {
   isActive: boolean;
   tokenVersion: number;
   lastLoginAt: Date | null;
+  passwordResetTokenHash: string | null;
+  passwordResetExpires: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +35,8 @@ const UserSchema = new Schema<IUser>(
     isActive: { type: Boolean, default: true },
     tokenVersion: { type: Number, default: 0 },
     lastLoginAt: { type: Date, default: null },
+    passwordResetTokenHash: { type: String, default: null, select: false },
+    passwordResetExpires: { type: Date, default: null, select: false },
   },
   { timestamps: true }
 );
