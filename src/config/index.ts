@@ -4,11 +4,17 @@ import { z } from "zod";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
+// A trailing slash here would make the CORS origin check and built attachment
+// URLs mismatch what the browser actually sends/expects (e.g. "https://x.com/"
+// vs "https://x.com") — trim it so a stray slash in a hosting provider's env
+// var UI doesn't silently break auth.
+const urlWithoutTrailingSlash = z.string().transform((val) => val.replace(/\/+$/, ""));
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(5001),
-  CLIENT_URL: z.string().default("http://localhost:3000"),
-  BACKEND_URL: z.string().default("http://localhost:5001"),
+  CLIENT_URL: urlWithoutTrailingSlash.default("http://localhost:3000"),
+  BACKEND_URL: urlWithoutTrailingSlash.default("http://localhost:5001"),
 
   MONGO_URI: z.string().min(1, "MONGO_URI is required"),
 
