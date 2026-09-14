@@ -1,6 +1,7 @@
 import request from "supertest";
 import { app } from "../src/server";
 import { TimeLog } from "../src/models/TimeLog.model";
+import { parsePhDateKey, phDateKey } from "../src/utils/phTime";
 
 const ADMIN = {
   organizationName: "Fitout Co",
@@ -51,10 +52,16 @@ describe("Attendance calendar — personal", () => {
     const usersRes = await request(app).get("/api/users").set("Authorization", `Bearer ${member.token}`);
     const organizationId = usersRes.body.data[0].organizationId as string;
 
-    const timeIn = new Date(presentDay);
-    timeIn.setHours(9, 0, 0, 0);
-    const timeOut = new Date(presentDay);
-    timeOut.setHours(17, 0, 0, 0);
+    const presentKey = `${presentDay.getFullYear()}-${String(presentDay.getMonth() + 1).padStart(2, "0")}-${String(presentDay.getDate()).padStart(2, "0")}`;
+    const emptyKey = `${emptyDay.getFullYear()}-${String(emptyDay.getMonth() + 1).padStart(2, "0")}-${String(emptyDay.getDate()).padStart(2, "0")}`;
+
+    // Anchor to PH midnight via parsePhDateKey (fixed UTC+8 math, independent
+    // of the test runner's own OS timezone) rather than the local .setHours()
+    // this used to use — on a UTC CI runner, "9am/5pm local" is "5pm/1am PH",
+    // which spuriously rolls the shift's clock-out into the next PH day.
+    const phMidnight = parsePhDateKey(presentKey);
+    const timeIn = new Date(phMidnight.getTime() + 9 * 60 * 60 * 1000); // 9am PH
+    const timeOut = new Date(phMidnight.getTime() + 17 * 60 * 60 * 1000); // 5pm PH
 
     await TimeLog.create([
       { organizationId, userId: member.userId, type: "time-in", timestamp: timeIn },
@@ -66,9 +73,6 @@ describe("Attendance calendar — personal", () => {
       .get(`/api/timeclock/calendar?month=${month}`)
       .set("Authorization", `Bearer ${member.token}`);
     expect(res.status).toBe(200);
-
-    const presentKey = `${presentDay.getFullYear()}-${String(presentDay.getMonth() + 1).padStart(2, "0")}-${String(presentDay.getDate()).padStart(2, "0")}`;
-    const emptyKey = `${emptyDay.getFullYear()}-${String(emptyDay.getMonth() + 1).padStart(2, "0")}-${String(emptyDay.getDate()).padStart(2, "0")}`;
 
     const presentSummary = res.body.data.find((d: { date: string }) => d.date === presentKey);
     expect(presentSummary.status).toBe("present");
@@ -113,7 +117,11 @@ describe("Attendance — team roster", () => {
 
     await request(app).post("/api/timeclock/clock").set("Authorization", `Bearer ${member.token}`).send({ type: "time-in" });
 
-    const today = new Date().toISOString().slice(0, 10);
+    // PH calendar day, not the UTC one — .toISOString() would pick the wrong
+    // day during the ~8 UTC hours where PH's calendar date has already rolled
+    // over but UTC's hasn't yet (PH is UTC+8), which is exactly the class of
+    // bug this whole file just got fixed for.
+    const today = phDateKey(new Date());
     const res = await request(app)
       .get(`/api/timeclock/team?date=${today}`)
       .set("Authorization", `Bearer ${adminToken}`);
