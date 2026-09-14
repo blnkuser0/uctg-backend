@@ -2,6 +2,7 @@ import { Router } from "express";
 import { auth } from "../middlewares/auth.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { authLimiter } from "../middlewares/rateLimit.middleware";
+import { upload } from "../middlewares/upload.middleware";
 import { registerSchema, loginSchema, changePasswordSchema, updateMeSchema } from "../validations/auth.validation";
 import * as authController from "../controllers/auth.controller";
 
@@ -13,6 +14,7 @@ router.post("/refresh-tokens", authController.refreshTokens);
 router.post("/logout", auth(), authController.logout);
 router.get("/me", auth(), authController.getMe);
 router.patch("/me", auth(), validate({ body: updateMeSchema }), authController.updateMe);
+router.post("/me/avatar", auth(), upload.single("avatar"), authController.uploadAvatar);
 router.post(
   "/change-password",
   auth(),

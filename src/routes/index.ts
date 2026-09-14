@@ -15,6 +15,7 @@ import myTasksRoute from "./myTasks.route";
 import mentionsRoute from "./mentions.route";
 import channelRoute from "./channel.route";
 import messageRoute from "./message.route";
+import organizationRoute from "./organization.route";
 
 const router = Router();
 
@@ -34,5 +35,6 @@ router.use("/my-tasks", myTasksRoute);
 router.use("/mentions", mentionsRoute);
 router.use("/channels", channelRoute);
 router.use("/messages", messageRoute);
+router.use("/organization", organizationRoute);
 
 export default router;

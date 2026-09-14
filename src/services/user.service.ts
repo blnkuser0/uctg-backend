@@ -58,7 +58,7 @@ async function getUserById(userId: string): Promise<UserWithRole> {
 async function updateUser(
   userId: string,
   organizationId: string,
-  updates: Partial<Pick<IUser, "name" | "isActive">> & { roleId?: string }
+  updates: Partial<Pick<IUser, "name" | "isActive" | "avatarUrl">> & { roleId?: string }
 ): Promise<UserWithRole> {
   if (updates.roleId) await assertRoleInOrg(organizationId, updates.roleId);
 

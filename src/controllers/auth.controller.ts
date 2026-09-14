@@ -4,6 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse";
 import { ApiError } from "../utils/ApiError";
 import { authService } from "../services/auth.service";
 import { userService } from "../services/user.service";
+import { storageService } from "../services/storage.service";
 import { IRole } from "../models/Role.model";
 
 const REFRESH_COOKIE_NAME = "refreshToken";
@@ -82,6 +83,15 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
 export const updateMe = asyncHandler(async (req: Request, res: Response) => {
   const user = await userService.updateUser(req.user!.id, req.orgId!, req.body);
   res.json(new ApiResponse(200, toPublicUser(user), "Profile updated"));
+});
+
+export const uploadAvatar = asyncHandler(async (req: Request, res: Response) => {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) throw ApiError.badRequest("No file uploaded");
+
+  const stored = await storageService.upload(file, `avatars/${req.user!.id}`);
+  const user = await userService.updateUser(req.user!.id, req.orgId!, { avatarUrl: stored.url });
+  res.json(new ApiResponse(200, toPublicUser(user), "Avatar updated"));
 });
 
 export const changePassword = asyncHandler(async (req: Request, res: Response) => {
