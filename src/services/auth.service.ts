@@ -41,7 +41,6 @@ async function generateUniqueSlug(organizationName: string, session: mongoose.Cl
   const base = slugify(organizationName);
   let slug = base;
   let attempt = 1;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const existing = await Organization.findOne({ slug }).session(session);
     if (!existing) return slug;

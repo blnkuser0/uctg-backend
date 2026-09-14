@@ -2,7 +2,11 @@ import { Resend } from "resend";
 import { config } from "../config";
 import { logger } from "../utils/logger";
 
-const resend = config.resend.apiKey ? new Resend(config.resend.apiKey) : null;
+// Never make a real network call from tests, even if a real key is sitting
+// in .env for local dev use — dotenv.config() in config/index.ts loads it
+// unconditionally, so this guard has to be explicit rather than relying on
+// the key simply being absent.
+const resend = config.resend.apiKey && config.env !== "test" ? new Resend(config.resend.apiKey) : null;
 
 async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
   if (!resend) {
@@ -10,7 +14,7 @@ async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<voi
     return;
   }
 
-  await resend.emails.send({
+  const { error } = await resend.emails.send({
     from: config.resend.fromEmail,
     to,
     subject: "Reset your Ugnexa Catalyst password",
@@ -27,6 +31,14 @@ async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<voi
       </div>
     `,
   });
+
+  // The Resend SDK returns { error } rather than throwing on an API-level
+  // failure (e.g. an unverified sending domain) — log it so it's visible in
+  // server logs, but don't throw: the caller (forgot-password) must still
+  // respond 200 either way, to avoid leaking which emails are registered.
+  if (error) {
+    logger.error({ to, error }, "Failed to send password reset email via Resend");
+  }
 }
 
 export const mailService = {

@@ -11,7 +11,7 @@ import {
   reorderChecklistItemsSchema,
 } from "../validations/task.validation";
 import { createManualTimeEntrySchema } from "../validations/timeEntry.validation";
-import { createCommentSchema, updateCommentSchema } from "../validations/comment.validation";
+import { createCommentSchema } from "../validations/comment.validation";
 import * as taskController from "../controllers/task.controller";
 import * as timeEntryController from "../controllers/timeEntry.controller";
 import * as commentController from "../controllers/comment.controller";

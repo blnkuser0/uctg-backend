@@ -23,7 +23,6 @@ async function generateUniqueKey(organizationId: string, name: string, requested
   const base = requested ?? deriveKeyBase(name);
   let key = base;
   let attempt = 1;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const existing = await Project.findOne({ organizationId, key });
     if (!existing) return key;
