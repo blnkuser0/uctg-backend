@@ -12,9 +12,9 @@ const urlWithoutTrailingSlash = z.string().transform((val) => val.replace(/\/+$/
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  PORT: z.coerce.number().default(5001),
+  PORT: z.coerce.number().default(5000),
   CLIENT_URL: urlWithoutTrailingSlash.default("http://localhost:3000"),
-  BACKEND_URL: urlWithoutTrailingSlash.default("http://localhost:5001"),
+  BACKEND_URL: urlWithoutTrailingSlash.default("http://localhost:5000"),
 
   MONGO_URI: z.string().min(1, "MONGO_URI is required"),
 

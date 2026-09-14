@@ -25,7 +25,7 @@ const ProjectSchema = new Schema<IProject>(
     name: { type: String, required: true, trim: true, maxlength: 120 },
     key: { type: String, required: true, trim: true, uppercase: true, maxlength: 10 },
     description: { type: String, trim: true, maxlength: 2000, default: "" },
-    color: { type: String, default: "#f59e0b" },
+    color: { type: String, default: "#0891b2" },
     status: { type: String, enum: PROJECT_STATUSES, default: "active" },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     memberIds: [{ type: Schema.Types.ObjectId, ref: "User", required: true }],

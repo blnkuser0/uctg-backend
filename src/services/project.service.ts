@@ -44,7 +44,7 @@ async function createProject(
     name: input.name,
     key,
     description: input.description ?? "",
-    color: input.color ?? "#f59e0b",
+    color: input.color ?? "#0891b2",
     createdBy: userId,
     memberIds: [userId],
   });

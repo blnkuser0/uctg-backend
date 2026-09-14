@@ -17,7 +17,7 @@ const LabelSchema = new Schema<ILabel>(
     organizationId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
     projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true },
     name: { type: String, required: true, trim: true, maxlength: 40 },
-    color: { type: String, required: true, default: "#f59e0b" },
+    color: { type: String, required: true, default: "#0891b2" },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     deletedAt: { type: Date, default: null },
   },
