@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { auth } from "../middlewares/auth.middleware";
+import { projectContext } from "../middlewares/projectContext.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { createProjectSchema, updateProjectSchema, addMemberSchema } from "../validations/project.validation";
 import { createStageSchema, reorderStagesSchema } from "../validations/stage.validation";
@@ -16,6 +17,7 @@ router.use(auth());
 
 router.post("/", validate({ body: createProjectSchema }), projectController.createProject);
 router.get("/", projectController.listProjects);
+router.use("/:id", projectContext);
 router.get("/:id", projectController.getProject);
 router.get("/:id/report", projectController.getReport);
 router.patch("/:id", validate({ body: updateProjectSchema }), projectController.updateProject);

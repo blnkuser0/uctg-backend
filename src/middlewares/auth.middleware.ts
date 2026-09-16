@@ -34,6 +34,7 @@ export const auth = () => {
       };
       req.orgId = user.organizationId.toString();
       req.permissions = user.roleId?.permissions ?? [];
+      req.roleName = user.roleId?.name;
 
       next();
     } catch {

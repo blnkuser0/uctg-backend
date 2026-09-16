@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiResponse } from "../utils/ApiResponse";
 import { organizationService } from "../services/organization.service";
+import { createClientOrganization as createClientOrganizationRecord } from "../services/platform.service";
 
 export const getOrganization = asyncHandler(async (req: Request, res: Response) => {
   const org = await organizationService.getOrganization(req.orgId!);
@@ -11,4 +12,14 @@ export const getOrganization = asyncHandler(async (req: Request, res: Response) 
 export const updateOrganization = asyncHandler(async (req: Request, res: Response) => {
   const org = await organizationService.updateOrganization(req.orgId!, req.body);
   res.json(new ApiResponse(200, org, "Organization updated"));
+});
+
+export const listClientOrganizations = asyncHandler(async (_req: Request, res: Response) => {
+  const organizations = await organizationService.listClientOrganizations();
+  res.json(new ApiResponse(200, organizations, "Client organizations"));
+});
+
+export const createClientOrganization = asyncHandler(async (req: Request, res: Response) => {
+  const organization = await createClientOrganizationRecord({ name: req.body.name, createdBy: req.user!.id });
+  res.status(201).json(new ApiResponse(201, organization, "Client organization created"));
 });

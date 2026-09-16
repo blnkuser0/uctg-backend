@@ -14,7 +14,12 @@ async function updateOrganization(organizationId: string, updates: { name?: stri
   return org;
 }
 
+async function listClientOrganizations(): Promise<IOrganization[]> {
+  return Organization.find({ kind: "client", status: "active" }).sort({ name: 1 });
+}
+
 export const organizationService = {
   getOrganization,
   updateOrganization,
+  listClientOrganizations,
 };

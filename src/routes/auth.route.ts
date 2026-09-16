@@ -4,7 +4,6 @@ import { validate } from "../middlewares/validate.middleware";
 import { authLimiter } from "../middlewares/rateLimit.middleware";
 import { upload } from "../middlewares/upload.middleware";
 import {
-  registerSchema,
   loginSchema,
   changePasswordSchema,
   updateMeSchema,
@@ -15,7 +14,6 @@ import * as authController from "../controllers/auth.controller";
 
 const router = Router();
 
-router.post("/register", authLimiter, validate({ body: registerSchema }), authController.register);
 router.post("/login", authLimiter, validate({ body: loginSchema }), authController.login);
 router.post("/refresh-tokens", authController.refreshTokens);
 router.post("/logout", auth(), authController.logout);

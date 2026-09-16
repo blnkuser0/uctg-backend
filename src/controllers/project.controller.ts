@@ -2,28 +2,32 @@ import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiResponse } from "../utils/ApiResponse";
 import { ApiError } from "../utils/ApiError";
-import { PERMISSIONS } from "../constants/permissions";
 import { projectService } from "../services/project.service";
 import { reportService } from "../services/report.service";
 import { emitToProject } from "../utils/socketEmitter";
 
 export const createProject = asyncHandler(async (req: Request, res: Response) => {
-  const project = await projectService.createProject(req.orgId!, req.user!.id, req.body);
+  const project = await projectService.createProject(
+    req.orgId!,
+    req.user!.id,
+    req.roleName === "SUPER_ADMIN" ? req.body.organizationId : undefined,
+    req.body
+  );
   res.status(201).json(new ApiResponse(201, project, "Project created"));
 });
 
 export const listProjects = asyncHandler(async (req: Request, res: Response) => {
   const wantsAll = req.query.all === "true";
   if (wantsAll) {
-    if (!req.permissions?.includes(PERMISSIONS.PROJECTS_MANAGE)) {
+    if (req.roleName !== "SUPER_ADMIN") {
       throw ApiError.forbidden("You do not have permission to view every project");
     }
-    const projects = await projectService.listAllProjects(req.orgId!);
+    const projects = await projectService.listAllProjects();
     res.json(new ApiResponse(200, projects, "All projects"));
     return;
   }
 
-  const projects = await projectService.listMyProjects(req.orgId!, req.user!.id);
+  const projects = await projectService.listMyProjects(req.user!.id);
   res.json(new ApiResponse(200, projects, "Your projects"));
 });
 

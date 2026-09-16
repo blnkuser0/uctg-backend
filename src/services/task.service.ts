@@ -130,9 +130,9 @@ async function getTaskForAccess(
   userId: string,
   permissions: Permission[]
 ): Promise<ITask> {
-  const task = await Task.findOne({ _id: taskId, organizationId, deletedAt: null });
+  const task = await Task.findOne({ _id: taskId, deletedAt: null });
   if (!task) throw ApiError.notFound("Task not found");
-  await projectService.assertProjectAccess(organizationId, task.projectId.toString(), userId, permissions);
+  await projectService.assertProjectAccess(task.organizationId.toString(), task.projectId.toString(), userId, permissions);
   return task;
 }
 
@@ -154,7 +154,7 @@ async function updateTask(
     const newlyAssigned = updates.assigneeIds
       .map((id) => id.toString())
       .filter((id) => !previousAssigneeIds.includes(id));
-    await notifyNewAssignees(organizationId, task, userId, newlyAssigned);
+    await notifyNewAssignees(task.organizationId.toString(), task, userId, newlyAssigned);
   }
 
   return task;
@@ -197,7 +197,7 @@ async function createSubtask(
 ): Promise<ITask> {
   const parent = await getTaskForAccess(organizationId, parentTaskId, userId, permissions);
 
-  return createTask(organizationId, parent.projectId.toString(), userId, permissions, {
+  return createTask(parent.organizationId.toString(), parent.projectId.toString(), userId, permissions, {
     stageId: parent.stageId.toString(),
     title: input.title,
     description: input.description,
@@ -322,8 +322,8 @@ async function removeAttachment(
   return { task, removedKey };
 }
 
-async function listMyTasks(organizationId: string, userId: string): Promise<ITask[]> {
-  return Task.find({ organizationId, assigneeIds: userId, deletedAt: null })
+async function listMyTasks(_organizationId: string, userId: string): Promise<ITask[]> {
+  return Task.find({ assigneeIds: userId, deletedAt: null })
     .sort({ deadline: 1, createdAt: -1 });
 }
 

@@ -3,6 +3,7 @@ import { Role, IRole } from "../models/Role.model";
 import { User } from "../models/User.model";
 import { PERMISSIONS, Permission } from "../constants/permissions";
 import { ApiError } from "../utils/ApiError";
+import { SystemRole } from "../constants/roles";
 
 export interface RoleWithUserCount {
   role: IRole;
@@ -11,7 +12,7 @@ export interface RoleWithUserCount {
 
 async function createRole(
   organizationId: string,
-  input: { name: string; permissions: Permission[] }
+  input: { name: SystemRole; permissions: Permission[] }
 ): Promise<IRole> {
   const existing = await Role.findOne({ organizationId, name: input.name });
   if (existing) throw ApiError.conflict("A role with this name already exists");
@@ -67,7 +68,7 @@ async function wouldStripLastRoleManager(
 async function updateRole(
   organizationId: string,
   roleId: string,
-  updates: { name?: string; permissions?: Permission[] }
+  updates: { name?: SystemRole; permissions?: Permission[] }
 ): Promise<IRole> {
   const role = await getByIdInOrg(organizationId, roleId);
 

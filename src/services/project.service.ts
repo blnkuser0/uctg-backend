@@ -1,6 +1,8 @@
 import { Project, IProject } from "../models/Project.model";
 import { Stage } from "../models/Stage.model";
 import { User } from "../models/User.model";
+import { Organization } from "../models/Organization.model";
+import { IRole } from "../models/Role.model";
 import { PERMISSIONS, Permission } from "../constants/permissions";
 import { notificationService } from "./notification.service";
 import { channelService } from "./channel.service";
@@ -34,23 +36,37 @@ async function generateUniqueKey(organizationId: string, name: string, requested
 async function createProject(
   organizationId: string,
   userId: string,
-  input: { name: string; key?: string; description?: string; color?: string }
+  clientOrganizationId: string | undefined,
+  input: { name: string; key?: string; description?: string; color?: string; memberIds?: string[] }
 ): Promise<IProject> {
-  const key = await generateUniqueKey(organizationId, input.name, input.key);
+  const targetOrganizationId = clientOrganizationId ?? organizationId;
+  if (clientOrganizationId) {
+    const client = await Organization.findOne({ _id: clientOrganizationId, kind: "client", status: "active" });
+    if (!client) throw ApiError.badRequest("Select an active client organization");
+  }
+  const key = await generateUniqueKey(targetOrganizationId, input.name, input.key);
+  const requestedMemberIds = [...new Set(input.memberIds ?? [])];
+  if (requestedMemberIds.length > 0) {
+    const eligibleDevelopers = await User.find({ _id: { $in: requestedMemberIds }, isActive: true }).populate<{ roleId: IRole }>("roleId");
+    if (eligibleDevelopers.length !== requestedMemberIds.length || eligibleDevelopers.some((developer) => developer.roleId.name !== "DEVELOPER")) {
+      throw ApiError.badRequest("Project teams can only include active Umbrella developers");
+    }
+  }
+  const memberIds = [...new Set([userId, ...requestedMemberIds])];
 
   const project = await Project.create({
-    organizationId,
+    organizationId: targetOrganizationId,
     name: input.name,
     key,
     description: input.description ?? "",
     color: input.color ?? "#0891b2",
     createdBy: userId,
-    memberIds: [userId],
+    memberIds,
   });
 
   await Stage.insertMany(
     DEFAULT_STAGES.map((stage, index) => ({
-      organizationId,
+      organizationId: targetOrganizationId,
       projectId: project._id,
       name: stage.name,
       order: index,
@@ -59,17 +75,17 @@ async function createProject(
     }))
   );
 
-  await channelService.createProjectChannel(organizationId, project._id.toString(), project.name, [userId], userId);
+  await channelService.createProjectChannel(targetOrganizationId, project._id.toString(), project.name, memberIds, userId);
 
   return project;
 }
 
-async function listMyProjects(organizationId: string, userId: string): Promise<IProject[]> {
-  return Project.find({ organizationId, memberIds: userId, deletedAt: null }).sort({ createdAt: -1 });
+async function listMyProjects(userId: string): Promise<IProject[]> {
+  return Project.find({ memberIds: userId, deletedAt: null }).sort({ createdAt: -1 });
 }
 
-async function listAllProjects(organizationId: string): Promise<IProject[]> {
-  return Project.find({ organizationId, deletedAt: null }).sort({ createdAt: -1 });
+async function listAllProjects(): Promise<IProject[]> {
+  return Project.find({ deletedAt: null }).sort({ createdAt: -1 });
 }
 
 /** Loads a project and enforces access: must be a member, or hold projects.manage. */
@@ -123,6 +139,10 @@ async function addMember(
 ): Promise<IProject> {
   const project = await assertProjectAccess(organizationId, projectId, userId, permissions);
   if (!project.memberIds.some((id) => id.toString() === newMemberId)) {
+    const developer = await User.findById(newMemberId).populate<{ roleId: IRole }>("roleId");
+    if (!developer || !developer.isActive || developer.roleId.name !== "DEVELOPER") {
+      throw ApiError.badRequest("Only active Umbrella developers can be assigned to client projects");
+    }
     project.memberIds.push(newMemberId as unknown as IProject["memberIds"][number]);
     await project.save();
     await channelService.addProjectMember(projectId, newMemberId);

@@ -1,29 +1,27 @@
 import { Router } from "express";
 import { auth } from "../middlewares/auth.middleware";
-import { requirePermission } from "../middlewares/permission.middleware";
 import { validate } from "../middlewares/validate.middleware";
-import { PERMISSIONS } from "../constants/permissions";
+import { requireSuperAdmin } from "../middlewares/role.middleware";
 import { createUserSchema, updateUserSchema } from "../validations/user.validation";
 import * as userController from "../controllers/user.controller";
 
 const router = Router();
 
 router.use(auth());
+router.use(requireSuperAdmin);
 
 router.get("/", userController.listUsers);
 router.get("/search", userController.searchUsers);
 router.post(
   "/",
-  requirePermission(PERMISSIONS.USERS_MANAGE),
   validate({ body: createUserSchema }),
   userController.createUser
 );
 router.patch(
   "/:id",
-  requirePermission(PERMISSIONS.USERS_MANAGE),
   validate({ body: updateUserSchema }),
   userController.updateUser
 );
-router.delete("/:id", requirePermission(PERMISSIONS.USERS_MANAGE), userController.deactivateUser);
+router.delete("/:id", userController.deactivateUser);
 
 export default router;

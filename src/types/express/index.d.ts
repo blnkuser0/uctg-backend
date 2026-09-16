@@ -10,6 +10,7 @@ declare global {
         name: string;
       };
       orgId?: string;
+      roleName?: string;
       permissions?: Permission[];
     }
   }

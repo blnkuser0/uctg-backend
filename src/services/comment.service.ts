@@ -12,8 +12,8 @@ async function listForTask(
   userId: string,
   permissions: Permission[]
 ): Promise<ITaskComment[]> {
-  await taskService.getTaskForAccess(organizationId, taskId, userId, permissions);
-  return TaskComment.find({ organizationId, taskId, deletedAt: null }).sort({ createdAt: 1 });
+  const task = await taskService.getTaskForAccess(organizationId, taskId, userId, permissions);
+  return TaskComment.find({ organizationId: task.organizationId, taskId, deletedAt: null }).sort({ createdAt: 1 });
 }
 
 async function createComment(
@@ -30,7 +30,7 @@ async function createComment(
   const mentions = [...new Set(input.mentions ?? [])].filter((id) => id !== userId);
 
   const comment = await TaskComment.create({
-    organizationId,
+    organizationId: task.organizationId,
     projectId: task.projectId,
     taskId: task._id,
     userId,
@@ -45,7 +45,7 @@ async function createComment(
   await Promise.all(
     mentions.map((mentionedUserId) =>
       notificationService.createNotification({
-        organizationId,
+        organizationId: task.organizationId.toString(),
         userId: mentionedUserId,
         type: "task_mention",
         projectId: task.projectId.toString(),
@@ -62,14 +62,14 @@ async function createComment(
   return comment;
 }
 
-async function listMentionsForUser(organizationId: string, userId: string): Promise<ITaskComment[]> {
-  return TaskComment.find({ organizationId, mentions: userId, deletedAt: null })
+async function listMentionsForUser(_organizationId: string, userId: string): Promise<ITaskComment[]> {
+  return TaskComment.find({ mentions: userId, deletedAt: null })
     .sort({ createdAt: -1 })
     .limit(100);
 }
 
 async function getOwnComment(organizationId: string, commentId: string, userId: string): Promise<ITaskComment> {
-  const comment = await TaskComment.findOne({ _id: commentId, organizationId, deletedAt: null });
+  const comment = await TaskComment.findOne({ _id: commentId, deletedAt: null });
   if (!comment) throw ApiError.notFound("Comment not found");
   if (comment.userId.toString() !== userId) throw ApiError.forbidden("You can only edit your own comments");
   return comment;

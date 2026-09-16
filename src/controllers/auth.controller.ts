@@ -42,11 +42,6 @@ function toPublicUser(user: {
   };
 }
 
-export const register = asyncHandler(async (req: Request, res: Response) => {
-  const user = await authService.registerOrganization(req.body);
-  res.status(201).json(new ApiResponse(201, toPublicUser(user), "Workspace created. Please log in."));
-});
-
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { user, tokens } = await authService.login(req.body);
   const fullUser = await userService.getUserById(user._id.toString());
@@ -81,7 +76,7 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updateMe = asyncHandler(async (req: Request, res: Response) => {
-  const user = await userService.updateUser(req.user!.id, req.orgId!, req.body);
+  const user = await userService.updateProfile(req.user!.id, req.orgId!, req.body);
   res.json(new ApiResponse(200, toPublicUser(user), "Profile updated"));
 });
 
@@ -90,7 +85,7 @@ export const uploadAvatar = asyncHandler(async (req: Request, res: Response) => 
   if (!file) throw ApiError.badRequest("No file uploaded");
 
   const stored = await storageService.upload(file, `avatars/${req.user!.id}`);
-  const user = await userService.updateUser(req.user!.id, req.orgId!, { avatarUrl: stored.url });
+  const user = await userService.updateProfile(req.user!.id, req.orgId!, { avatarUrl: stored.url });
   res.json(new ApiResponse(200, toPublicUser(user), "Avatar updated"));
 });
 

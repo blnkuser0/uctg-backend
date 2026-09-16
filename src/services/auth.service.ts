@@ -1,14 +1,9 @@
-import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { User, IUser } from "../models/User.model";
-import { Organization } from "../models/Organization.model";
-import { Role } from "../models/Role.model";
-import { ALL_PERMISSIONS } from "../constants/permissions";
 import { jwtService } from "./jwt.service";
 import { mailService } from "./mail.service";
 import { ApiError } from "../utils/ApiError";
-import { slugify } from "../utils/slugify";
 import { config } from "../config";
 
 const SALT_ROUNDS = 10;
@@ -35,131 +30,6 @@ function buildTokens(user: IUser): AuthTokens {
     tokenVersion: user.tokenVersion,
   });
   return { accessToken, refreshToken };
-}
-
-async function generateUniqueSlug(organizationName: string, session?: mongoose.ClientSession): Promise<string> {
-  const base = slugify(organizationName);
-  let slug = base;
-  let attempt = 1;
-  while (true) {
-    const query = Organization.findOne({ slug });
-    if (session) query.session(session);
-    const existing = await query;
-    if (!existing) return slug;
-    attempt += 1;
-    slug = `${base}-${attempt}`;
-  }
-}
-
-async function registerOrganizationWithoutTransaction(input: {
-  organizationName: string;
-  name: string;
-  email: string;
-  password: string;
-}): Promise<IUser> {
-  const slug = await generateUniqueSlug(input.organizationName);
-  const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
-  let organizationId: mongoose.Types.ObjectId | null = null;
-  let roleId: mongoose.Types.ObjectId | null = null;
-  let userId: mongoose.Types.ObjectId | null = null;
-
-  try {
-    const organization = await Organization.create({
-      name: input.organizationName,
-      slug,
-      createdBy: new mongoose.Types.ObjectId(),
-    });
-    organizationId = organization._id;
-
-    const adminRole = await Role.create({
-      organizationId: organization._id,
-      name: "Admin",
-      permissions: ALL_PERMISSIONS,
-    });
-    roleId = adminRole._id;
-
-    const user = await User.create({
-      name: input.name,
-      email: input.email,
-      passwordHash,
-      organizationId: organization._id,
-      roleId: adminRole._id,
-    });
-    userId = user._id;
-
-    organization.createdBy = user._id;
-    await organization.save();
-
-    return (await user.populate("roleId")) as unknown as IUser;
-  } catch (error) {
-    if (userId) await User.deleteOne({ _id: userId });
-    if (roleId) await Role.deleteOne({ _id: roleId });
-    if (organizationId) await Organization.deleteOne({ _id: organizationId });
-    throw error;
-  }
-}
-
-async function registerOrganization(input: {
-  organizationName: string;
-  name: string;
-  email: string;
-  password: string;
-}): Promise<IUser> {
-  const existingUser = await User.findOne({ email: input.email });
-  if (existingUser) {
-    throw ApiError.conflict("A user with this email already exists");
-  }
-
-  const session = await mongoose.startSession();
-  let transactionError: unknown;
-  try {
-    let createdUser: IUser | null = null;
-
-    await session.withTransaction(async () => {
-      const slug = await generateUniqueSlug(input.organizationName, session);
-      const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
-
-      const [organization] = await Organization.create(
-        [{ name: input.organizationName, slug, createdBy: new mongoose.Types.ObjectId() }],
-        { session }
-      );
-
-      const [adminRole] = await Role.create(
-        [{ organizationId: organization._id, name: "Admin", permissions: ALL_PERMISSIONS }],
-        { session }
-      );
-
-      const [user] = await User.create(
-        [
-          {
-            name: input.name,
-            email: input.email,
-            passwordHash,
-            organizationId: organization._id,
-            roleId: adminRole._id,
-          },
-        ],
-        { session }
-      );
-
-      organization.createdBy = user._id;
-      await organization.save({ session });
-
-      createdUser = user;
-    });
-
-    return (await createdUser!.populate("roleId")) as unknown as IUser;
-  } catch (error) {
-    transactionError = error;
-  } finally {
-    await session.endSession();
-  }
-
-  if (transactionError instanceof Error && transactionError.message.includes("Transaction numbers are only allowed")) {
-    return registerOrganizationWithoutTransaction(input);
-  }
-
-  throw transactionError;
 }
 
 async function login(input: { email: string; password: string }): Promise<{ user: IUser; tokens: AuthTokens }> {
@@ -251,7 +121,6 @@ async function resetPassword(token: string, newPassword: string): Promise<void> 
 }
 
 export const authService = {
-  registerOrganization,
   login,
   refreshTokens,
   logout,
