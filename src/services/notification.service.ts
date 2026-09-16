@@ -4,16 +4,16 @@ import { User } from "../models/User.model";
 import { ApiError } from "../utils/ApiError";
 import { emitToUser } from "../utils/socketEmitter";
 
-async function listForUser(organizationId: string, userId: string, limit = 50): Promise<INotification[]> {
-  return Notification.find({ organizationId, userId }).sort({ createdAt: -1 }).limit(limit);
+async function listForUser(_organizationId: string, userId: string, limit = 50): Promise<INotification[]> {
+  return Notification.find({ userId }).sort({ createdAt: -1 }).limit(limit);
 }
 
-async function countUnread(organizationId: string, userId: string): Promise<number> {
-  return Notification.countDocuments({ organizationId, userId, readAt: null });
+async function countUnread(_organizationId: string, userId: string): Promise<number> {
+  return Notification.countDocuments({ userId, readAt: null });
 }
 
-async function markRead(organizationId: string, userId: string, notificationIds?: string[]): Promise<void> {
-  const filter: Record<string, unknown> = { organizationId, userId, readAt: null };
+async function markRead(_organizationId: string, userId: string, notificationIds?: string[]): Promise<void> {
+  const filter: Record<string, unknown> = { userId, readAt: null };
   if (notificationIds && notificationIds.length > 0) filter._id = { $in: notificationIds };
   await Notification.updateMany(filter, { readAt: new Date() });
 }

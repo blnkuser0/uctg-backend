@@ -12,6 +12,8 @@ export const createProjectSchema = z.object({
     .optional(),
   description: z.string().trim().max(2000).optional(),
   color: z.string().trim().max(20).optional(),
+  organizationId: objectId.optional(),
+  memberIds: z.array(objectId).max(50).optional(),
 });
 
 export const updateProjectSchema = z.object({
