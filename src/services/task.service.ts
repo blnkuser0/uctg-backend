@@ -10,12 +10,7 @@ import { notificationService } from "./notification.service";
 import { computeChecklistProgress } from "../utils/progress";
 import { ApiError } from "../utils/ApiError";
 
-async function notifyNewAssignees(
-  organizationId: string,
-  task: ITask,
-  actorId: string,
-  newAssigneeIds: string[]
-): Promise<void> {
+async function notifyNewAssignees(task: ITask, actorId: string, newAssigneeIds: string[]): Promise<void> {
   const targets = newAssigneeIds.filter((id) => id !== actorId);
   if (targets.length === 0) return;
 
@@ -23,7 +18,6 @@ async function notifyNewAssignees(
   await Promise.all(
     targets.map((assigneeId) =>
       notificationService.createNotification({
-        organizationId,
         userId: assigneeId,
         type: "task_assigned",
         projectId: task.projectId.toString(),
@@ -51,11 +45,15 @@ async function listTasks(
   projectId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   filters: ListTasksFilters
 ): Promise<ITask[]> {
-  await projectService.assertProjectAccess(organizationId, projectId, userId, permissions);
+  await projectService.assertProjectAccess(organizationId, projectId, userId, permissions, isSuperAdmin);
 
-  const query: FilterQuery<ITask> = { organizationId, projectId, deletedAt: null };
+  // No organizationId filter: the project itself was already access-checked
+  // above (membership can now be cross-org), and every task here belongs to
+  // that specific project regardless of which org owns it.
+  const query: FilterQuery<ITask> = { projectId, deletedAt: null };
   if (filters.stageId) query.stageId = filters.stageId;
   if (filters.assigneeId) query.assigneeIds = filters.assigneeId;
   if (filters.labelId) query.labelIds = filters.labelId;
@@ -74,6 +72,7 @@ async function createTask(
   projectId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   input: {
     stageId: string;
     title: string;
@@ -87,23 +86,25 @@ async function createTask(
     estimateMinutes?: number | null;
   }
 ): Promise<ITask> {
-  await projectService.assertProjectAccess(organizationId, projectId, userId, permissions);
+  await projectService.assertProjectAccess(organizationId, projectId, userId, permissions, isSuperAdmin);
 
   const stage = await Stage.findOne({ _id: input.stageId, projectId, deletedAt: null });
   if (!stage) throw ApiError.badRequest("Stage not found in this project");
 
-  const project = await Project.findOneAndUpdate(
-    { _id: projectId, organizationId },
-    { $inc: { taskSeq: 1 } },
-    { new: true }
-  );
+  // No organizationId filter: access was already established above, and can
+  // now legitimately come from a caller whose own org differs from the
+  // project's.
+  const project = await Project.findOneAndUpdate({ _id: projectId }, { $inc: { taskSeq: 1 } }, { new: true });
   if (!project) throw ApiError.notFound("Project not found");
 
   const lastTask = await Task.findOne({ stageId: stage._id, deletedAt: null }).sort({ order: -1 });
   const order = lastTask ? lastTask.order + 1 : 0;
 
+  // Stamp the task with the PROJECT's own org, not the acting user's — keeps
+  // every resource under a project internally consistent regardless of who
+  // (which org) created it.
   const task = await Task.create({
-    organizationId,
+    organizationId: project.organizationId,
     projectId,
     stageId: stage._id,
     parentTaskId: input.parentTaskId ?? null,
@@ -120,7 +121,7 @@ async function createTask(
     createdBy: userId,
   });
 
-  await notifyNewAssignees(organizationId, task, userId, input.assigneeIds ?? []);
+  await notifyNewAssignees(task, userId, input.assigneeIds ?? []);
   return task;
 }
 
@@ -128,11 +129,15 @@ async function getTaskForAccess(
   organizationId: string,
   taskId: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<ITask> {
-  const task = await Task.findOne({ _id: taskId, organizationId, deletedAt: null });
+  // No organizationId filter: the task's true org may differ from the
+  // caller's — assertProjectAccess below (via task.projectId) is what
+  // actually authorizes the caller, not this lookup.
+  const task = await Task.findOne({ _id: taskId, deletedAt: null });
   if (!task) throw ApiError.notFound("Task not found");
-  await projectService.assertProjectAccess(organizationId, task.projectId.toString(), userId, permissions);
+  await projectService.assertProjectAccess(organizationId, task.projectId.toString(), userId, permissions, isSuperAdmin);
   return task;
 }
 
@@ -141,11 +146,12 @@ async function updateTask(
   taskId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   updates: Partial<
     Pick<ITask, "title" | "description" | "priority" | "assigneeIds" | "labelIds" | "startDate" | "deadline" | "estimateMinutes">
   >
 ): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   const previousAssigneeIds = task.assigneeIds.map((id) => id.toString());
   Object.assign(task, updates);
   await task.save();
@@ -154,14 +160,20 @@ async function updateTask(
     const newlyAssigned = updates.assigneeIds
       .map((id) => id.toString())
       .filter((id) => !previousAssigneeIds.includes(id));
-    await notifyNewAssignees(organizationId, task, userId, newlyAssigned);
+    await notifyNewAssignees(task, userId, newlyAssigned);
   }
 
   return task;
 }
 
-async function deleteTask(organizationId: string, taskId: string, userId: string, permissions: Permission[]): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions);
+async function deleteTask(
+  organizationId: string,
+  taskId: string,
+  userId: string,
+  permissions: Permission[],
+  isSuperAdmin: boolean
+): Promise<ITask> {
+  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   task.deletedAt = new Date();
   await task.save();
   return task;
@@ -172,9 +184,10 @@ async function moveTask(
   taskId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   input: { stageId: string; order: number }
 ): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
 
   const stage = await Stage.findOne({ _id: input.stageId, projectId: task.projectId, deletedAt: null });
   if (!stage) throw ApiError.badRequest("Stage not found in this project");
@@ -193,11 +206,12 @@ async function createSubtask(
   parentTaskId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   input: { title: string; description?: string; priority?: TaskPriority | null; assigneeIds?: string[] }
 ): Promise<ITask> {
-  const parent = await getTaskForAccess(organizationId, parentTaskId, userId, permissions);
+  const parent = await getTaskForAccess(organizationId, parentTaskId, userId, permissions, isSuperAdmin);
 
-  return createTask(organizationId, parent.projectId.toString(), userId, permissions, {
+  return createTask(organizationId, parent.projectId.toString(), userId, permissions, isSuperAdmin, {
     stageId: parent.stageId.toString(),
     title: input.title,
     description: input.description,
@@ -211,9 +225,10 @@ async function listSubtasks(
   organizationId: string,
   parentTaskId: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<ITask[]> {
-  const parent = await getTaskForAccess(organizationId, parentTaskId, userId, permissions);
+  const parent = await getTaskForAccess(organizationId, parentTaskId, userId, permissions, isSuperAdmin);
   return Task.find({ parentTaskId: parent._id, deletedAt: null }).sort({ order: 1, createdAt: 1 });
 }
 
@@ -222,9 +237,10 @@ async function addChecklistItem(
   taskId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   text: string
 ): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   task.checklist.push({
     _id: new Types.ObjectId(),
     text,
@@ -244,9 +260,10 @@ async function updateChecklistItem(
   itemId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   updates: { text?: string; isChecked?: boolean }
 ): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   const item = task.checklist.find((i) => i._id.toString() === itemId);
   if (!item) throw ApiError.notFound("Checklist item not found");
 
@@ -267,9 +284,10 @@ async function deleteChecklistItem(
   taskId: string,
   itemId: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   task.checklist = task.checklist.filter((i) => i._id.toString() !== itemId);
   task.checklistProgress = computeChecklistProgress(task.checklist);
   await task.save();
@@ -281,9 +299,10 @@ async function reorderChecklistItems(
   taskId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   orderedIds: string[]
 ): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   const byId = new Map(task.checklist.map((item) => [item._id.toString(), item]));
   orderedIds.forEach((id, index) => {
     const item = byId.get(id);
@@ -299,9 +318,10 @@ async function addAttachment(
   taskId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   file: IAttachment
 ): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   task.attachments.push(file);
   await task.save();
   return task;
@@ -312,9 +332,10 @@ async function removeAttachment(
   taskId: string,
   fileKey: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<{ task: ITask; removedKey: string | null }> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   const before = task.attachments.length;
   task.attachments = task.attachments.filter((a) => a.fileKey !== fileKey);
   const removedKey = task.attachments.length < before ? fileKey : null;
@@ -322,9 +343,11 @@ async function removeAttachment(
   return { task, removedKey };
 }
 
-async function listMyTasks(organizationId: string, userId: string): Promise<ITask[]> {
-  return Task.find({ organizationId, assigneeIds: userId, deletedAt: null })
-    .sort({ deadline: 1, createdAt: -1 });
+// No organizationId filter: "my tasks" is membership/assignment-based, not
+// org-based, mirroring listMyProjects — a cross-org-assigned developer's
+// tasks on a client project must show up here too.
+async function listMyTasks(userId: string): Promise<ITask[]> {
+  return Task.find({ assigneeIds: userId, deletedAt: null }).sort({ deadline: 1, createdAt: -1 });
 }
 
 export const taskService = {

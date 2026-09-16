@@ -1,5 +1,7 @@
 import { Notification, INotification } from "../models/Notification.model";
 import { NotificationType } from "../constants/notifications";
+import { User } from "../models/User.model";
+import { ApiError } from "../utils/ApiError";
 import { emitToUser } from "../utils/socketEmitter";
 
 async function listForUser(organizationId: string, userId: string, limit = 50): Promise<INotification[]> {
@@ -17,7 +19,6 @@ async function markRead(organizationId: string, userId: string, notificationIds?
 }
 
 async function createNotification(input: {
-  organizationId: string;
   userId: string;
   type: NotificationType;
   projectId?: string | null;
@@ -31,8 +32,16 @@ async function createNotification(input: {
   title: string;
   message?: string;
 }): Promise<INotification> {
+  // Always derive the org from the RECIPIENT's own user doc, never from the
+  // caller — a project/channel's owning org and a recipient's home org can
+  // now differ (cross-org project assignment), and listForUser/countUnread
+  // filter by the viewer's OWN org, so stamping anything else here would
+  // make the notification permanently invisible to its own recipient.
+  const recipient = await User.findById(input.userId).select("organizationId");
+  if (!recipient) throw ApiError.notFound("Notification recipient not found");
+
   const notification = await Notification.create({
-    organizationId: input.organizationId,
+    organizationId: recipient.organizationId,
     userId: input.userId,
     type: input.type,
     projectId: input.projectId ?? null,

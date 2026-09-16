@@ -1,11 +1,8 @@
 import { z } from "zod";
 
-export const registerSchema = z.object({
-  organizationName: z.string().trim().min(2).max(120),
-  name: z.string().trim().min(2).max(120),
-  email: z.string().trim().toLowerCase().email(),
-  password: z.string().min(8).max(128),
-});
+// registerSchema moved to validations/platform.validation.ts as
+// createOrgSchema — registration is Super-Admin-only now, reached via
+// /api/platform/organizations, not this file's routes.
 
 export const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),

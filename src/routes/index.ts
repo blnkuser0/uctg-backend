@@ -16,6 +16,7 @@ import mentionsRoute from "./mentions.route";
 import channelRoute from "./channel.route";
 import messageRoute from "./message.route";
 import organizationRoute from "./organization.route";
+import platformRoute from "./platform.route";
 
 const router = Router();
 
@@ -36,5 +37,6 @@ router.use("/mentions", mentionsRoute);
 router.use("/channels", channelRoute);
 router.use("/messages", messageRoute);
 router.use("/organization", organizationRoute);
+router.use("/platform", platformRoute);
 
 export default router;

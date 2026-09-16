@@ -44,7 +44,6 @@ async function createLeave(
   await Promise.all(
     approverIds.map((approverId) =>
       notificationService.createNotification({
-        organizationId,
         userId: approverId,
         type: "leave_submitted",
         leaveId: leave._id.toString(),
@@ -99,7 +98,6 @@ async function setHrDecision(
     await Promise.all(
       adminApproverIds.map((approverId) =>
         notificationService.createNotification({
-          organizationId,
           userId: approverId,
           type: "leave_hr_decided",
           leaveId: leave._id.toString(),
@@ -136,7 +134,6 @@ async function setAdminDecision(
   if (requesterId !== decidedBy) {
     const decider = await User.findById(decidedBy);
     await notificationService.createNotification({
-      organizationId,
       userId: requesterId,
       type: "leave_decided",
       leaveId: leave._id.toString(),

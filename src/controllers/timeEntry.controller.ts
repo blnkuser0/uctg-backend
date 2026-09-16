@@ -5,13 +5,25 @@ import { timeEntryService } from "../services/timeEntry.service";
 import { emitToProject } from "../utils/socketEmitter";
 
 export const startTimer = asyncHandler(async (req: Request, res: Response) => {
-  const entry = await timeEntryService.startTimer(req.orgId!, req.params.id, req.user!.id, req.permissions!);
+  const entry = await timeEntryService.startTimer(
+    req.orgId!,
+    req.params.id,
+    req.user!.id,
+    req.permissions!,
+    req.isSuperAdmin!
+  );
   emitToProject(entry.projectId.toString(), "pm:timer:started", { taskId: req.params.id, userId: req.user!.id });
   res.status(201).json(new ApiResponse(201, entry, "Timer started"));
 });
 
 export const stopTimer = asyncHandler(async (req: Request, res: Response) => {
-  const entry = await timeEntryService.stopTimer(req.orgId!, req.params.id, req.user!.id, req.permissions!);
+  const entry = await timeEntryService.stopTimer(
+    req.orgId!,
+    req.params.id,
+    req.user!.id,
+    req.permissions!,
+    req.isSuperAdmin!
+  );
   emitToProject(entry.projectId.toString(), "pm:timer:stopped", {
     taskId: req.params.id,
     userId: req.user!.id,
@@ -26,17 +38,24 @@ export const createManualEntry = asyncHandler(async (req: Request, res: Response
     req.params.id,
     req.user!.id,
     req.permissions!,
+    req.isSuperAdmin!,
     req.body
   );
   res.status(201).json(new ApiResponse(201, entry, "Time entry added"));
 });
 
 export const listForTask = asyncHandler(async (req: Request, res: Response) => {
-  const entries = await timeEntryService.listForTask(req.orgId!, req.params.id, req.user!.id, req.permissions!);
+  const entries = await timeEntryService.listForTask(
+    req.orgId!,
+    req.params.id,
+    req.user!.id,
+    req.permissions!,
+    req.isSuperAdmin!
+  );
   res.json(new ApiResponse(200, entries, "Time entries"));
 });
 
 export const deleteEntry = asyncHandler(async (req: Request, res: Response) => {
-  await timeEntryService.deleteEntry(req.orgId!, req.params.id, req.user!.id);
+  await timeEntryService.deleteEntry(req.params.id, req.user!.id);
   res.json(new ApiResponse(200, null, "Time entry deleted"));
 });

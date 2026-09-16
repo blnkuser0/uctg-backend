@@ -35,6 +35,6 @@ export const deleteGroup = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const markRead = asyncHandler(async (req: Request, res: Response) => {
-  await channelService.markRead(req.orgId!, req.params.id, req.user!.id);
+  await channelService.markRead(req.orgId!, req.params.id, req.user!.id, req.isSuperAdmin!);
   res.json(new ApiResponse(200, null, "Marked read"));
 });

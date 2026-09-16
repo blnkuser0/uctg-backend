@@ -13,6 +13,12 @@ export interface IUser extends Document {
   lastLoginAt: Date | null;
   passwordResetTokenHash: string | null;
   passwordResetExpires: Date | null;
+  // Platform-wide bypass, independent of organizationId/roleId — a Super
+  // Admin still has a normal home org + role (for ordinary org-scoped
+  // actions), but this flag is what actually grants cross-org access in
+  // authorization code. Not a Role/permission because Role is structurally
+  // org-bound (organizationId required, unique per org).
+  isSuperAdmin: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +43,7 @@ const UserSchema = new Schema<IUser>(
     lastLoginAt: { type: Date, default: null },
     passwordResetTokenHash: { type: String, default: null, select: false },
     passwordResetExpires: { type: Date, default: null, select: false },
+    isSuperAdmin: { type: Boolean, default: false, index: true },
   },
   { timestamps: true }
 );

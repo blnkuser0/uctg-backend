@@ -15,8 +15,8 @@ interface MentionItem {
 
 export const listMentions = asyncHandler(async (req: Request, res: Response) => {
   const [comments, messages] = await Promise.all([
-    commentService.listMentionsForUser(req.orgId!, req.user!.id),
-    messageService.listMentionsForUser(req.orgId!, req.user!.id),
+    commentService.listMentionsForUser(req.user!.id),
+    messageService.listMentionsForUser(req.user!.id),
   ]);
 
   const items: MentionItem[] = [

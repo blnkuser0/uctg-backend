@@ -28,7 +28,6 @@ async function sweepDeadlineReminders(now: Date = new Date()): Promise<number> {
       await Promise.all(
         task.assigneeIds.map((assigneeId) =>
           notificationService.createNotification({
-            organizationId: task.organizationId.toString(),
             userId: assigneeId.toString(),
             type: "task_deadline",
             projectId: task.projectId.toString(),

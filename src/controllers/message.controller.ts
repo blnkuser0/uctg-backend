@@ -7,7 +7,7 @@ import { storageService } from "../services/storage.service";
 import { emitToChannel } from "../utils/socketEmitter";
 
 export const listForChannel = asyncHandler(async (req: Request, res: Response) => {
-  const messages = await messageService.listForChannel(req.orgId!, req.params.id, req.user!.id, {
+  const messages = await messageService.listForChannel(req.params.id, req.user!.id, req.isSuperAdmin!, {
     before: req.query.before as Date | undefined,
     limit: req.query.limit as number | undefined,
   });
@@ -15,7 +15,7 @@ export const listForChannel = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const createMessage = asyncHandler(async (req: Request, res: Response) => {
-  const message = await messageService.createMessage(req.orgId!, req.params.id, req.user!.id, req.body);
+  const message = await messageService.createMessage(req.params.id, req.user!.id, req.isSuperAdmin!, req.body);
   emitToChannel(req.params.id, "chat:message:created", { channelId: req.params.id, message });
   res.status(201).json(new ApiResponse(201, message, "Message sent"));
 });
@@ -30,7 +30,7 @@ export const addAttachments = asyncHandler(async (req: Request, res: Response) =
     attachments.push({ ...stored, uploadedBy: req.user!.id as unknown as never, createdAt: new Date() });
   }
 
-  const message = await messageService.createMessage(req.orgId!, req.params.id, req.user!.id, {
+  const message = await messageService.createMessage(req.params.id, req.user!.id, req.isSuperAdmin!, {
     message: req.body.message ?? "",
     attachments,
   });
@@ -39,13 +39,13 @@ export const addAttachments = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const updateMessage = asyncHandler(async (req: Request, res: Response) => {
-  const message = await messageService.updateMessage(req.orgId!, req.params.id, req.user!.id, req.body.message);
+  const message = await messageService.updateMessage(req.params.id, req.user!.id, req.body.message);
   emitToChannel(message.channelId.toString(), "chat:message:updated", { channelId: message.channelId, message });
   res.json(new ApiResponse(200, message, "Message updated"));
 });
 
 export const deleteMessage = asyncHandler(async (req: Request, res: Response) => {
-  const message = await messageService.deleteMessage(req.orgId!, req.params.id, req.user!.id);
+  const message = await messageService.deleteMessage(req.params.id, req.user!.id);
   emitToChannel(message.channelId.toString(), "chat:message:deleted", {
     channelId: message.channelId,
     messageId: message._id,

@@ -3,7 +3,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiResponse } from "../utils/ApiResponse";
 import { userService, UserWithRole } from "../services/user.service";
 
-function toPublicUser(user: UserWithRole) {
+export function toPublicUser(user: UserWithRole) {
   return {
     id: user._id,
     name: user.name,
@@ -12,6 +12,7 @@ function toPublicUser(user: UserWithRole) {
     role: { id: user.roleId._id, name: user.roleId.name, permissions: user.roleId.permissions },
     avatarUrl: user.avatarUrl,
     isActive: user.isActive,
+    isSuperAdmin: user.isSuperAdmin === true,
   };
 }
 

@@ -23,12 +23,13 @@ async function getProjectReport(
   organizationId: string,
   projectId: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<ProjectReport> {
-  const project = await projectService.assertProjectAccess(organizationId, projectId, userId, permissions);
+  const project = await projectService.assertProjectAccess(organizationId, projectId, userId, permissions, isSuperAdmin);
 
   const [tasks, stages] = await Promise.all([
-    Task.find({ organizationId, projectId: project._id, deletedAt: null, parentTaskId: null }),
+    Task.find({ projectId: project._id, deletedAt: null, parentTaskId: null }),
     Stage.find({ projectId: project._id, deletedAt: null }).sort({ order: 1 }),
   ]);
 

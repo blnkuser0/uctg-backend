@@ -1,5 +1,6 @@
 import request from "supertest";
 import { app } from "../src/server";
+import { createTestOrgAndAdmin } from "./helpers/bootstrap";
 import { Channel } from "../src/models/Channel.model";
 import { Notification } from "../src/models/Notification.model";
 
@@ -26,7 +27,7 @@ async function createUser(adminToken: string, roleId: string, name: string, emai
 }
 
 async function setup() {
-  await request(app).post("/api/auth/register").send(ADMIN);
+  await createTestOrgAndAdmin(ADMIN);
   const admin = await loginWithId(ADMIN.email, ADMIN.password);
 
   const roleId = await createRole(admin.token, "Member");

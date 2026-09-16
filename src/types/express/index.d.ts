@@ -11,6 +11,7 @@ declare global {
       };
       orgId?: string;
       permissions?: Permission[];
+      isSuperAdmin?: boolean;
     }
   }
 }

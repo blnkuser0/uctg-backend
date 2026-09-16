@@ -22,6 +22,7 @@ function toPublicUser(user: {
   organizationId: unknown;
   roleId: unknown;
   avatarUrl: string | null;
+  isSuperAdmin?: boolean;
 }) {
   const isPopulated = !!user.roleId && typeof user.roleId === "object" && "name" in user.roleId;
   const role = isPopulated
@@ -39,13 +40,9 @@ function toPublicUser(user: {
     organizationId: user.organizationId,
     role,
     avatarUrl: user.avatarUrl,
+    isSuperAdmin: user.isSuperAdmin === true,
   };
 }
-
-export const register = asyncHandler(async (req: Request, res: Response) => {
-  const user = await authService.registerOrganization(req.body);
-  res.status(201).json(new ApiResponse(201, toPublicUser(user), "Workspace created. Please log in."));
-});
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { user, tokens } = await authService.login(req.body);

@@ -7,8 +7,15 @@ function buildDmKey(userIdA: string, userIdB: string): string {
   return [userIdA, userIdB].sort().join("_");
 }
 
+// No organizationId filter on the Channel query: a developer's home org and
+// a project-channel's owning org can now differ (same reasoning as
+// listMyProjects) — this is what makes an assigned project's chat show up
+// for them. The ChannelRead lookup below stays organizationId-scoped since
+// that's always the VIEWER's own org, consistently on both the read and
+// write (markRead) side — not a resource-identity filter, so it isn't the
+// same bug.
 async function listMyChannels(organizationId: string, userId: string) {
-  const channels = await Channel.find({ organizationId, memberIds: userId, deletedAt: null })
+  const channels = await Channel.find({ memberIds: userId, deletedAt: null })
     .populate("memberIds", "name avatarUrl")
     .sort({ lastMessageAt: -1, createdAt: -1 });
 
@@ -31,8 +38,8 @@ async function listMyChannels(organizationId: string, userId: string) {
   );
 }
 
-async function markRead(organizationId: string, channelId: string, userId: string): Promise<void> {
-  await assertChannelAccess(organizationId, channelId, userId);
+async function markRead(organizationId: string, channelId: string, userId: string, isSuperAdmin: boolean): Promise<void> {
+  await assertChannelAccess(channelId, userId, isSuperAdmin);
   await ChannelRead.findOneAndUpdate(
     { organizationId, channelId, userId },
     { lastReadAt: new Date() },
@@ -114,11 +121,17 @@ async function deleteGroup(organizationId: string, channelId: string, userId: st
   await channel.save();
 }
 
-/** Loads a channel and enforces membership access — the chokepoint every message operation goes through. */
-async function assertChannelAccess(organizationId: string, channelId: string, userId: string): Promise<IChannel> {
-  const channel = await Channel.findOne({ _id: channelId, organizationId, deletedAt: null });
+/**
+ * Loads a channel and enforces membership access — the chokepoint every
+ * message operation goes through. No organizationId filter and no
+ * permission-based bypass (unlike assertProjectAccess) — channels have no
+ * org-wide "manage all" permission, so it's membership or Super Admin, full
+ * stop.
+ */
+async function assertChannelAccess(channelId: string, userId: string, isSuperAdmin: boolean): Promise<IChannel> {
+  const channel = await Channel.findOne({ _id: channelId, deletedAt: null });
   if (!channel) throw ApiError.notFound("Channel not found");
-  if (!channel.memberIds.some((id) => id.toString() === userId)) {
+  if (!channel.memberIds.some((id) => id.toString() === userId) && !isSuperAdmin) {
     throw ApiError.forbidden("You are not a member of this channel");
   }
   return channel;

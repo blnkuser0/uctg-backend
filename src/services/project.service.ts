@@ -64,27 +64,50 @@ async function createProject(
   return project;
 }
 
-async function listMyProjects(organizationId: string, userId: string): Promise<IProject[]> {
-  return Project.find({ organizationId, memberIds: userId, deletedAt: null }).sort({ createdAt: -1 });
+// No organizationId filter here on purpose: a developer's home org and a
+// project's owning org can now legitimately differ (cross-org project
+// assignment), so "my projects" must be membership-based, not org-based.
+// This is unchanged in practice for every ordinary same-org user, since
+// their memberships were always within their own org anyway.
+async function listMyProjects(userId: string): Promise<IProject[]> {
+  return Project.find({ memberIds: userId, deletedAt: null }).sort({ createdAt: -1 });
 }
 
+/** The existing "every project in my org" oversight view — stays org-scoped, gated by projects.manage. */
 async function listAllProjects(organizationId: string): Promise<IProject[]> {
   return Project.find({ organizationId, deletedAt: null }).sort({ createdAt: -1 });
 }
 
-/** Loads a project and enforces access: must be a member, or hold projects.manage. */
+/** Platform-wide oversight: every project in every org. Super Admin only — gate at the controller/route level. */
+async function listAllProjectsPlatformWide(): Promise<IProject[]> {
+  return Project.find({ deletedAt: null }).sort({ createdAt: -1 });
+}
+
+/**
+ * Loads a project and enforces access. Three independent ways in:
+ *  - direct membership (works regardless of org — this is how a Developers-org
+ *    developer accesses a client project they've been assigned to)
+ *  - projects.manage, but ONLY within the caller's own org — this must stay
+ *    org-scoped: without the org-equality check here, a projects.manage
+ *    holder in one client org would gain access to every OTHER client org's
+ *    projects the moment the query-level org filter below was dropped
+ *  - isSuperAdmin — a separate, genuinely platform-wide bypass
+ */
 async function assertProjectAccess(
   organizationId: string,
   projectId: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<IProject> {
-  const project = await Project.findOne({ _id: projectId, organizationId, deletedAt: null });
+  const project = await Project.findOne({ _id: projectId, deletedAt: null });
   if (!project) throw ApiError.notFound("Project not found");
 
   const isMember = project.memberIds.some((id) => id.toString() === userId);
-  const canManageAll = permissions.includes(PERMISSIONS.PROJECTS_MANAGE);
-  if (!isMember && !canManageAll) {
+  const canManageOwnOrg =
+    permissions.includes(PERMISSIONS.PROJECTS_MANAGE) && project.organizationId.toString() === organizationId;
+
+  if (!isMember && !canManageOwnOrg && !isSuperAdmin) {
     throw ApiError.forbidden("You are not a member of this project");
   }
   return project;
@@ -95,9 +118,10 @@ async function updateProject(
   projectId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   updates: Partial<Pick<IProject, "name" | "description" | "color" | "status">>
 ): Promise<IProject> {
-  const project = await assertProjectAccess(organizationId, projectId, userId, permissions);
+  const project = await assertProjectAccess(organizationId, projectId, userId, permissions, isSuperAdmin);
   Object.assign(project, updates);
   await project.save();
   return project;
@@ -107,9 +131,10 @@ async function deleteProject(
   organizationId: string,
   projectId: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<void> {
-  const project = await assertProjectAccess(organizationId, projectId, userId, permissions);
+  const project = await assertProjectAccess(organizationId, projectId, userId, permissions, isSuperAdmin);
   project.deletedAt = new Date();
   await project.save();
 }
@@ -119,9 +144,10 @@ async function addMember(
   projectId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   newMemberId: string
 ): Promise<IProject> {
-  const project = await assertProjectAccess(organizationId, projectId, userId, permissions);
+  const project = await assertProjectAccess(organizationId, projectId, userId, permissions, isSuperAdmin);
   if (!project.memberIds.some((id) => id.toString() === newMemberId)) {
     project.memberIds.push(newMemberId as unknown as IProject["memberIds"][number]);
     await project.save();
@@ -130,7 +156,6 @@ async function addMember(
     if (newMemberId !== userId) {
       const actor = await User.findById(userId);
       await notificationService.createNotification({
-        organizationId,
         userId: newMemberId,
         type: "project_added",
         projectId: project._id.toString(),
@@ -149,9 +174,10 @@ async function removeMember(
   projectId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   memberIdToRemove: string
 ): Promise<IProject> {
-  const project = await assertProjectAccess(organizationId, projectId, userId, permissions);
+  const project = await assertProjectAccess(organizationId, projectId, userId, permissions, isSuperAdmin);
   project.memberIds = project.memberIds.filter((id) => id.toString() !== memberIdToRemove);
   await project.save();
   await channelService.removeProjectMember(projectId, memberIdToRemove);
@@ -162,6 +188,7 @@ export const projectService = {
   createProject,
   listMyProjects,
   listAllProjects,
+  listAllProjectsPlatformWide,
   assertProjectAccess,
   updateProject,
   deleteProject,

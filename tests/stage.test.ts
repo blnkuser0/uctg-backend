@@ -1,5 +1,6 @@
 import request from "supertest";
 import { app } from "../src/server";
+import { createTestOrgAndAdmin } from "./helpers/bootstrap";
 
 const ADMIN = {
   organizationName: "Fitout Co",
@@ -9,7 +10,7 @@ const ADMIN = {
 };
 
 async function loginAsAdmin() {
-  await request(app).post("/api/auth/register").send(ADMIN);
+  await createTestOrgAndAdmin(ADMIN);
   const res = await request(app).post("/api/auth/login").send({ email: ADMIN.email, password: ADMIN.password });
   return res.body.data.accessToken as string;
 }

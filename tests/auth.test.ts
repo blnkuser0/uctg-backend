@@ -1,6 +1,7 @@
 import request from "supertest";
 import { app } from "../src/server";
 import { mailService } from "../src/services/mail.service";
+import { createTestOrgAndAdmin } from "./helpers/bootstrap";
 
 const ADMIN = {
   organizationName: "Fitout Co",
@@ -10,42 +11,19 @@ const ADMIN = {
 };
 
 describe("Auth flow", () => {
-  it("registers a new organization with its first admin", async () => {
+  it("has no public registration route — organizations/accounts are Super-Admin-provisioned only", async () => {
     const res = await request(app).post("/api/auth/register").send(ADMIN);
-    expect(res.status).toBe(201);
-    expect(res.body.data.role.name).toBe("Admin");
-    expect(res.body.data.role.permissions.length).toBeGreaterThan(0);
-    expect(res.body.data.email).toBe(ADMIN.email);
-    expect(res.body.data.organizationId).toBeTruthy();
-  });
-
-  it("creates a separate, isolated organization on each registration", async () => {
-    const first = await request(app).post("/api/auth/register").send(ADMIN);
-    const second = await request(app)
-      .post("/api/auth/register")
-      .send({ ...ADMIN, organizationName: "Other Co", email: "someone-else@ugnexa.test" });
-
-    expect(first.status).toBe(201);
-    expect(second.status).toBe(201);
-    expect(second.body.data.organizationId).not.toBe(first.body.data.organizationId);
-  });
-
-  it("rejects registering the same email twice", async () => {
-    await request(app).post("/api/auth/register").send(ADMIN);
-    const res = await request(app)
-      .post("/api/auth/register")
-      .send({ ...ADMIN, organizationName: "Other Co" });
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(404);
   });
 
   it("rejects login with the wrong password", async () => {
-    await request(app).post("/api/auth/register").send(ADMIN);
+    await createTestOrgAndAdmin(ADMIN);
     const res = await request(app).post("/api/auth/login").send({ email: ADMIN.email, password: "wrong-password" });
     expect(res.status).toBe(401);
   });
 
   it("logs in and returns an access token + refresh cookie", async () => {
-    await request(app).post("/api/auth/register").send(ADMIN);
+    await createTestOrgAndAdmin(ADMIN);
     const res = await request(app)
       .post("/api/auth/login")
       .send({ email: ADMIN.email, password: ADMIN.password });
@@ -56,7 +34,7 @@ describe("Auth flow", () => {
   });
 
   it("fetches the current user with the access token", async () => {
-    await request(app).post("/api/auth/register").send(ADMIN);
+    await createTestOrgAndAdmin(ADMIN);
     const loginRes = await request(app).post("/api/auth/login").send({ email: ADMIN.email, password: ADMIN.password });
     const token = loginRes.body.data.accessToken;
 
@@ -71,7 +49,7 @@ describe("Auth flow", () => {
   });
 
   it("refreshes the access token using the refresh cookie", async () => {
-    await request(app).post("/api/auth/register").send(ADMIN);
+    await createTestOrgAndAdmin(ADMIN);
     const loginRes = await request(app).post("/api/auth/login").send({ email: ADMIN.email, password: ADMIN.password });
     const cookie = loginRes.headers["set-cookie"];
 
@@ -81,7 +59,7 @@ describe("Auth flow", () => {
   });
 
   it("logs out and revokes the refresh token", async () => {
-    await request(app).post("/api/auth/register").send(ADMIN);
+    await createTestOrgAndAdmin(ADMIN);
     const loginRes = await request(app).post("/api/auth/login").send({ email: ADMIN.email, password: ADMIN.password });
     const token = loginRes.body.data.accessToken;
     const cookie = loginRes.headers["set-cookie"];
@@ -100,7 +78,7 @@ describe("Password reset", () => {
   }
 
   it("returns 200 for both existing and unknown emails, without leaking which", async () => {
-    await request(app).post("/api/auth/register").send(ADMIN);
+    await createTestOrgAndAdmin(ADMIN);
 
     const known = await request(app).post("/api/auth/forgot-password").send({ email: ADMIN.email });
     const unknown = await request(app).post("/api/auth/forgot-password").send({ email: "nobody@ugnexa.test" });
@@ -111,7 +89,7 @@ describe("Password reset", () => {
   });
 
   it("resets the password with a valid token and revokes existing sessions", async () => {
-    await request(app).post("/api/auth/register").send(ADMIN);
+    await createTestOrgAndAdmin(ADMIN);
     const loginRes = await request(app).post("/api/auth/login").send({ email: ADMIN.email, password: ADMIN.password });
     const oldRefreshCookie = loginRes.headers["set-cookie"];
 
@@ -137,7 +115,7 @@ describe("Password reset", () => {
   });
 
   it("rejects a reset with an invalid or already-used token", async () => {
-    await request(app).post("/api/auth/register").send(ADMIN);
+    await createTestOrgAndAdmin(ADMIN);
 
     const badTokenRes = await request(app)
       .post("/api/auth/reset-password")

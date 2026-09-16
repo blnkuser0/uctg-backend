@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "dev:db": "ts-node --transpile-only src/scripts/local-mongo.ts",
+    "bootstrap:platform": "ts-node --transpile-only src/scripts/bootstrap-platform.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "jest",

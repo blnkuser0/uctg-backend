@@ -1,6 +1,7 @@
 import request from "supertest";
 import { app } from "../src/server";
 import { Notification } from "../src/models/Notification.model";
+import { createTestOrgAndAdmin } from "./helpers/bootstrap";
 
 const ADMIN = {
   organizationName: "Fitout Co",
@@ -33,7 +34,7 @@ async function createUserWithRole(adminToken: string, roleId: string, name: stri
 }
 
 async function setup() {
-  await request(app).post("/api/auth/register").send(ADMIN);
+  await createTestOrgAndAdmin(ADMIN);
   const adminToken = await login(ADMIN.email, ADMIN.password);
 
   const hrRoleId = await createRole(adminToken, "HR", ["leaves.view_all", "leaves.approve_hr"]);
@@ -52,8 +53,8 @@ async function setup() {
 }
 
 async function setupWithIds() {
-  const adminReg = await request(app).post("/api/auth/register").send(ADMIN);
-  const adminId = adminReg.body.data.id as string;
+  const adminReg = await createTestOrgAndAdmin(ADMIN);
+  const adminId = adminReg.id;
   const adminToken = await login(ADMIN.email, ADMIN.password);
 
   const hrRoleId = await createRole(adminToken, "HR", ["leaves.view_all", "leaves.approve_hr"]);

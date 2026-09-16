@@ -12,15 +12,17 @@ async function startTimer(
   organizationId: string,
   taskId: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<ITimeEntry> {
-  const task = await taskService.getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await taskService.getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
 
   const running = await TimeEntry.findOne({ userId, endedAt: null });
   if (running) throw ApiError.conflict("You already have a timer running on another task");
 
+  // Stamp with the task's own org, not the acting user's.
   return TimeEntry.create({
-    organizationId,
+    organizationId: task.organizationId,
     taskId: task._id,
     projectId: task.projectId,
     userId,
@@ -34,11 +36,13 @@ async function stopTimer(
   organizationId: string,
   taskId: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<ITimeEntry> {
-  const task = await taskService.getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await taskService.getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
 
-  const entry = await TimeEntry.findOne({ organizationId, taskId: task._id, userId, endedAt: null });
+  // No organizationId filter — taskId + userId already scope this correctly.
+  const entry = await TimeEntry.findOne({ taskId: task._id, userId, endedAt: null });
   if (!entry) throw ApiError.badRequest("No running timer on this task");
 
   entry.endedAt = new Date();
@@ -54,14 +58,15 @@ async function createManualEntry(
   taskId: string,
   userId: string,
   permissions: Permission[],
+  isSuperAdmin: boolean,
   input: { startedAt: Date; endedAt: Date; note?: string }
 ): Promise<ITimeEntry> {
-  const task = await taskService.getTaskForAccess(organizationId, taskId, userId, permissions);
+  const task = await taskService.getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   if (input.endedAt < input.startedAt) throw ApiError.badRequest("endedAt must be after startedAt");
 
   const durationMinutes = minutesBetween(input.startedAt, input.endedAt);
   const entry = await TimeEntry.create({
-    organizationId,
+    organizationId: task.organizationId,
     taskId: task._id,
     projectId: task.projectId,
     userId,
@@ -80,14 +85,17 @@ async function listForTask(
   organizationId: string,
   taskId: string,
   userId: string,
-  permissions: Permission[]
+  permissions: Permission[],
+  isSuperAdmin: boolean
 ): Promise<ITimeEntry[]> {
-  await taskService.getTaskForAccess(organizationId, taskId, userId, permissions);
-  return TimeEntry.find({ organizationId, taskId }).sort({ createdAt: -1 });
+  await taskService.getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
+  return TimeEntry.find({ taskId }).sort({ createdAt: -1 });
 }
 
-async function deleteEntry(organizationId: string, entryId: string, userId: string): Promise<void> {
-  const entry = await TimeEntry.findOne({ _id: entryId, organizationId, userId });
+// Own-entry-only, by construction — no org check needed (same reasoning as
+// comment.service.ts's getOwnComment).
+async function deleteEntry(entryId: string, userId: string): Promise<void> {
+  const entry = await TimeEntry.findOne({ _id: entryId, userId });
   if (!entry) throw ApiError.notFound("Time entry not found");
 
   if (entry.durationMinutes) {

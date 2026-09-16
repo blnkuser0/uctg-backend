@@ -23,28 +23,47 @@ export const listProjects = asyncHandler(async (req: Request, res: Response) => 
     return;
   }
 
-  const projects = await projectService.listMyProjects(req.orgId!, req.user!.id);
+  const projects = await projectService.listMyProjects(req.user!.id);
   res.json(new ApiResponse(200, projects, "Your projects"));
 });
 
 export const getProject = asyncHandler(async (req: Request, res: Response) => {
-  const project = await projectService.assertProjectAccess(req.orgId!, req.params.id, req.user!.id, req.permissions!);
+  const project = await projectService.assertProjectAccess(
+    req.orgId!,
+    req.params.id,
+    req.user!.id,
+    req.permissions!,
+    req.isSuperAdmin!
+  );
   res.json(new ApiResponse(200, project, "Project"));
 });
 
 export const getReport = asyncHandler(async (req: Request, res: Response) => {
-  const report = await reportService.getProjectReport(req.orgId!, req.params.id, req.user!.id, req.permissions!);
+  const report = await reportService.getProjectReport(
+    req.orgId!,
+    req.params.id,
+    req.user!.id,
+    req.permissions!,
+    req.isSuperAdmin!
+  );
   res.json(new ApiResponse(200, report, "Project report"));
 });
 
 export const updateProject = asyncHandler(async (req: Request, res: Response) => {
-  const project = await projectService.updateProject(req.orgId!, req.params.id, req.user!.id, req.permissions!, req.body);
+  const project = await projectService.updateProject(
+    req.orgId!,
+    req.params.id,
+    req.user!.id,
+    req.permissions!,
+    req.isSuperAdmin!,
+    req.body
+  );
   emitToProject(project._id.toString(), "pm:project:updated", { project });
   res.json(new ApiResponse(200, project, "Project updated"));
 });
 
 export const deleteProject = asyncHandler(async (req: Request, res: Response) => {
-  await projectService.deleteProject(req.orgId!, req.params.id, req.user!.id, req.permissions!);
+  await projectService.deleteProject(req.orgId!, req.params.id, req.user!.id, req.permissions!, req.isSuperAdmin!);
   emitToProject(req.params.id, "pm:project:deleted", { projectId: req.params.id });
   res.json(new ApiResponse(200, null, "Project deleted"));
 });
@@ -55,6 +74,7 @@ export const addMember = asyncHandler(async (req: Request, res: Response) => {
     req.params.id,
     req.user!.id,
     req.permissions!,
+    req.isSuperAdmin!,
     req.body.userId
   );
   emitToProject(project._id.toString(), "pm:project:updated", { project });
@@ -67,6 +87,7 @@ export const removeMember = asyncHandler(async (req: Request, res: Response) => 
     req.params.id,
     req.user!.id,
     req.permissions!,
+    req.isSuperAdmin!,
     req.params.userId
   );
   emitToProject(project._id.toString(), "pm:project:updated", { project });

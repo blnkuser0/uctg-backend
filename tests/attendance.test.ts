@@ -2,6 +2,7 @@ import request from "supertest";
 import { app } from "../src/server";
 import { TimeLog } from "../src/models/TimeLog.model";
 import { parsePhDateKey, phDateKey } from "../src/utils/phTime";
+import { createTestOrgAndAdmin } from "./helpers/bootstrap";
 
 const ADMIN = {
   organizationName: "Fitout Co",
@@ -26,8 +27,8 @@ async function createUser(adminToken: string, roleId: string, name: string, emai
 }
 
 async function setup() {
-  const reg = await request(app).post("/api/auth/register").send(ADMIN);
-  const adminId = reg.body.data.id as string;
+  const reg = await createTestOrgAndAdmin(ADMIN);
+  const adminId = reg.id;
   const adminLogin = await loginWithId(ADMIN.email, ADMIN.password);
 
   const memberRoleId = await createRole(adminLogin.token, "Member");

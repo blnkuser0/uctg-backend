@@ -99,7 +99,12 @@ async function registerOrganizationWithoutTransaction(input: {
   }
 }
 
-async function registerOrganization(input: {
+// Exported directly (not via the authService object below) — only
+// platform.service.ts should call this now, gated behind Super Admin.
+// Keeping it off the authService object is a defense-in-depth: an accidental
+// future public-route wire-up via authService.registerOrganization becomes a
+// compile error instead of a silent hole.
+export async function registerOrganization(input: {
   organizationName: string;
   name: string;
   email: string;
@@ -251,7 +256,6 @@ async function resetPassword(token: string, newPassword: string): Promise<void> 
 }
 
 export const authService = {
-  registerOrganization,
   login,
   refreshTokens,
   logout,
