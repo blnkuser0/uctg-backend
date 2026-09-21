@@ -17,6 +17,7 @@ import channelRoute from "./channel.route";
 import messageRoute from "./message.route";
 import organizationRoute from "./organization.route";
 import platformRoute from "./platform.route";
+import publicRoute from "./public.route";
 
 const router = Router();
 
@@ -38,5 +39,6 @@ router.use("/channels", channelRoute);
 router.use("/messages", messageRoute);
 router.use("/organization", organizationRoute);
 router.use("/platform", platformRoute);
+router.use("/public", publicRoute);
 
 export default router;

@@ -19,3 +19,12 @@ export const authLimiter = rateLimit({
   skip: () => isTest,
   message: { success: false, message: "Too many auth attempts, please try again later." },
 });
+
+export const verifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isTest,
+  message: { success: false, message: "Too many verification attempts, please try again later." },
+});

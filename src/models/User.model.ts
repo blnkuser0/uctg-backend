@@ -1,4 +1,19 @@
+import { randomBytes } from "crypto";
 import { Schema, model, Document, Types } from "mongoose";
+import { nextSequence } from "./Counter.model";
+
+export const EMPLOYEE_ID_PREFIX = "UGX";
+
+export async function nextEmployeeId(): Promise<string> {
+  const seq = await nextSequence("employeeId");
+  return `${EMPLOYEE_ID_PREFIX}-${String(seq).padStart(4, "0")}`;
+}
+
+// Unguessable, so the QR verification URL can't be enumerated by counting
+// employee IDs. Never derived from anything about the user.
+export function generateIdToken(): string {
+  return randomBytes(16).toString("hex");
+}
 
 export interface IUser extends Document {
   _id: Types.ObjectId;
@@ -19,6 +34,11 @@ export interface IUser extends Document {
   // authorization code. Not a Role/permission because Role is structurally
   // org-bound (organizationId required, unique per org).
   isSuperAdmin: boolean;
+  // Company ID number (e.g. UGX-0001) and the secret behind the ID card's QR
+  // code. Set automatically for every new user; older accounts are backfilled
+  // the first time their ID card is requested.
+  employeeId?: string;
+  idToken?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,8 +64,16 @@ const UserSchema = new Schema<IUser>(
     passwordResetTokenHash: { type: String, default: null, select: false },
     passwordResetExpires: { type: Date, default: null, select: false },
     isSuperAdmin: { type: Boolean, default: false, index: true },
+    employeeId: { type: String, unique: true, sparse: true },
+    idToken: { type: String, unique: true, sparse: true, select: false },
   },
   { timestamps: true }
 );
+
+UserSchema.pre("validate", async function () {
+  if (!this.isNew) return;
+  if (!this.employeeId) this.employeeId = await nextEmployeeId();
+  if (!this.idToken) this.idToken = generateIdToken();
+});
 
 export const User = model<IUser>("User", UserSchema);

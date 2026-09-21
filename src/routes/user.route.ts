@@ -4,7 +4,9 @@ import { requirePermission } from "../middlewares/permission.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { PERMISSIONS } from "../constants/permissions";
 import { createUserSchema, updateUserSchema } from "../validations/user.validation";
+import { userIdParamSchema } from "../validations/idCard.validation";
 import * as userController from "../controllers/user.controller";
+import * as idCardController from "../controllers/idCard.controller";
 
 const router = Router();
 
@@ -12,6 +14,8 @@ router.use(auth());
 
 router.get("/", userController.listUsers);
 router.get("/search", userController.searchUsers);
+router.get("/me/id-card", idCardController.getMyIdCard);
+router.get("/:id/id-card", validate({ params: userIdParamSchema }), idCardController.getUserIdCard);
 router.post(
   "/",
   requirePermission(PERMISSIONS.USERS_MANAGE),
