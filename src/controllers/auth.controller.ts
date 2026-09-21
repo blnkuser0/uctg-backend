@@ -6,13 +6,17 @@ import { authService } from "../services/auth.service";
 import { userService } from "../services/user.service";
 import { storageService } from "../services/storage.service";
 import { IRole } from "../models/Role.model";
+import { config } from "../config";
+import { durationToMs } from "../utils/duration";
 
 const REFRESH_COOKIE_NAME = "refreshToken";
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
   sameSite: "lax" as const,
   secure: process.env.NODE_ENV === "production",
-  maxAge: 7 * 24 * 60 * 60 * 1000,
+  // Tied to the refresh token's own lifetime: a cookie that expires before the
+  // token it holds (it used to be a hard-coded 7 days) silently logs users out.
+  maxAge: durationToMs(config.jwt.refreshExpiresIn, 7 * 24 * 60 * 60 * 1000),
 };
 
 function toPublicUser(user: {
@@ -23,6 +27,7 @@ function toPublicUser(user: {
   roleId: unknown;
   avatarUrl: string | null;
   isSuperAdmin?: boolean;
+  mustChangePassword?: boolean;
 }) {
   const isPopulated = !!user.roleId && typeof user.roleId === "object" && "name" in user.roleId;
   const role = isPopulated
@@ -41,6 +46,7 @@ function toPublicUser(user: {
     role,
     avatarUrl: user.avatarUrl,
     isSuperAdmin: user.isSuperAdmin === true,
+    mustChangePassword: user.mustChangePassword === true,
   };
 }
 
@@ -92,8 +98,11 @@ export const uploadAvatar = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const changePassword = asyncHandler(async (req: Request, res: Response) => {
-  await authService.changePassword(req.user!.id, req.body.currentPassword, req.body.newPassword);
-  res.json(new ApiResponse(200, null, "Password changed"));
+  // Every other session is revoked, but the one that just changed the password
+  // gets fresh tokens so it is not logged out when its access token expires.
+  const tokens = await authService.changePassword(req.user!.id, req.body.currentPassword, req.body.newPassword);
+  res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
+  res.json(new ApiResponse(200, { accessToken: tokens.accessToken }, "Password changed"));
 });
 
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {

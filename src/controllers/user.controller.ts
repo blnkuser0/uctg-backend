@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiResponse } from "../utils/ApiResponse";
 import { userService, UserWithRole } from "../services/user.service";
+import { mailService } from "../services/mail.service";
 
 export function toPublicUser(user: UserWithRole) {
   return {
@@ -13,12 +14,18 @@ export function toPublicUser(user: UserWithRole) {
     avatarUrl: user.avatarUrl,
     isActive: user.isActive,
     isSuperAdmin: user.isSuperAdmin === true,
+    mustChangePassword: user.mustChangePassword === true,
   };
 }
 
 export const createUser = asyncHandler(async (req: Request, res: Response) => {
   const user = await userService.createUser({ ...req.body, organizationId: req.orgId! });
-  res.status(201).json(new ApiResponse(201, toPublicUser(user), "User created"));
+  const credentialsEmailSent = await mailService.sendAccountCreatedEmail({
+    to: user.email,
+    name: user.name,
+    password: req.body.password,
+  });
+  res.status(201).json(new ApiResponse(201, { ...toPublicUser(user), credentialsEmailSent }, "User created"));
 });
 
 export const listUsers = asyncHandler(async (req: Request, res: Response) => {

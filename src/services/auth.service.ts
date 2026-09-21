@@ -210,7 +210,7 @@ async function logout(userId: string): Promise<void> {
   await User.findByIdAndUpdate(userId, { $inc: { tokenVersion: 1 } });
 }
 
-async function changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+async function changePassword(userId: string, currentPassword: string, newPassword: string): Promise<AuthTokens> {
   const user = await User.findById(userId).select("+passwordHash");
   if (!user) throw ApiError.notFound("User not found");
 
@@ -218,8 +218,10 @@ async function changePassword(userId: string, currentPassword: string, newPasswo
   if (!matches) throw ApiError.badRequest("Current password is incorrect");
 
   user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  user.mustChangePassword = false;
   user.tokenVersion += 1; // invalidate existing refresh tokens
   await user.save();
+  return buildTokens(user);
 }
 
 async function requestPasswordReset(email: string): Promise<void> {
@@ -251,6 +253,7 @@ async function resetPassword(token: string, newPassword: string): Promise<void> 
   user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
   user.passwordResetTokenHash = null;
   user.passwordResetExpires = null;
+  user.mustChangePassword = false;
   user.tokenVersion += 1; // invalidate existing refresh tokens
   await user.save();
 }

@@ -1,0 +1,14 @@
+{
+  // Editor-only: the root tsconfig.json deliberately excludes tests (they aren't part of the
+  // production build), so VS Code used to open test files without Jest's global types and
+  // flag describe/it/expect as "Cannot find name". This config gives them those types.
+  // Jest itself (ts-jest) and `npm run build` keep using the root tsconfig.json.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "types": ["jest", "node"]
+  },
+  "include": ["./**/*.ts", "../src/**/*.ts"],
+  "exclude": ["../node_modules", "../dist"]
+}

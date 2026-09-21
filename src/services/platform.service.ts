@@ -32,14 +32,17 @@ async function createClientOrganization(input: {
   email: string;
   password: string;
 }): Promise<IUser> {
-  return registerOrganization(input);
+  const admin = await registerOrganization(input);
+  // Their password was chosen by the Super Admin and emailed to them.
+  await User.updateOne({ _id: admin._id }, { mustChangePassword: true });
+  return admin;
 }
 
 async function listAllOrganizations(): Promise<IOrganization[]> {
   return Organization.find().sort({ name: 1 });
 }
 
-async function createDeveloperUser(input: { name: string; email: string; password: string }): Promise<UserWithRole> {
+async function createDeveloperUser(input: { name?: string; email: string; password: string }): Promise<UserWithRole> {
   const devsOrg = await getDevelopersOrg();
   const role = await getOrCreateDeveloperRole(devsOrg._id.toString());
   return userService.createUser({
@@ -53,7 +56,7 @@ async function createDeveloperUser(input: { name: string; email: string; passwor
 
 async function createClientOrgUser(input: {
   organizationId: string;
-  name: string;
+  name?: string;
   email: string;
   password: string;
   roleId: string;

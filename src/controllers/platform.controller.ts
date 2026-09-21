@@ -2,11 +2,17 @@ import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiResponse } from "../utils/ApiResponse";
 import { platformService } from "../services/platform.service";
+import { mailService } from "../services/mail.service";
 import { toPublicUser } from "./user.controller";
 
 export const createOrganization = asyncHandler(async (req: Request, res: Response) => {
   const admin = await platformService.createClientOrganization(req.body);
-  res.status(201).json(new ApiResponse(201, admin, "Organization created"));
+  const credentialsEmailSent = await mailService.sendAccountCreatedEmail({
+    to: admin.email,
+    name: admin.name,
+    password: req.body.password,
+  });
+  res.status(201).json(new ApiResponse(201, { ...admin.toJSON(), credentialsEmailSent }, "Organization created"));
 });
 
 export const listOrganizations = asyncHandler(async (_req: Request, res: Response) => {
@@ -18,7 +24,12 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
   const user = req.body.isDeveloper
     ? await platformService.createDeveloperUser(req.body)
     : await platformService.createClientOrgUser(req.body);
-  res.status(201).json(new ApiResponse(201, toPublicUser(user), "User created"));
+  const credentialsEmailSent = await mailService.sendAccountCreatedEmail({
+    to: user.email,
+    name: user.name,
+    password: req.body.password,
+  });
+  res.status(201).json(new ApiResponse(201, { ...toPublicUser(user), credentialsEmailSent }, "User created"));
 });
 
 export const listDevelopers = asyncHandler(async (_req: Request, res: Response) => {

@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { User, IUser } from "../models/User.model";
 import { Role, IRole } from "../models/Role.model";
 import { ApiError } from "../utils/ApiError";
+import { nameFromEmail } from "../utils/nameFromEmail";
 
 const SALT_ROUNDS = 10;
 
@@ -13,7 +14,7 @@ async function assertRoleInOrg(organizationId: string, roleId: string): Promise<
 }
 
 async function createUser(input: {
-  name: string;
+  name?: string;
   email: string;
   password: string;
   roleId: string;
@@ -27,9 +28,10 @@ async function createUser(input: {
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
   const user = await User.create({
-    name: input.name,
+    name: input.name?.trim() || nameFromEmail(input.email),
     email: input.email,
     passwordHash,
+    mustChangePassword: true,
     roleId: input.roleId,
     organizationId: input.organizationId,
   });

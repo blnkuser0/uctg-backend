@@ -34,6 +34,9 @@ export interface IUser extends Document {
   // authorization code. Not a Role/permission because Role is structurally
   // org-bound (organizationId required, unique per org).
   isSuperAdmin: boolean;
+  // True for accounts an admin created with a password they chose (and emailed).
+  // Cleared the moment the user sets their own password.
+  mustChangePassword: boolean;
   // Company ID number (e.g. UGX-0001) and the secret behind the ID card's QR
   // code. Set automatically for every new user; older accounts are backfilled
   // the first time their ID card is requested.
@@ -64,6 +67,7 @@ const UserSchema = new Schema<IUser>(
     passwordResetTokenHash: { type: String, default: null, select: false },
     passwordResetExpires: { type: Date, default: null, select: false },
     isSuperAdmin: { type: Boolean, default: false, index: true },
+    mustChangePassword: { type: Boolean, default: false },
     employeeId: { type: String, unique: true, sparse: true },
     idToken: { type: String, unique: true, sparse: true, select: false },
   },
