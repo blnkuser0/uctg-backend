@@ -29,6 +29,13 @@ router.patch(
   userController.updateUser
 );
 router.delete("/:id", requirePermission(PERMISSIONS.USERS_MANAGE), userController.deactivateUser);
+// Puts the account back on the shared temporary password and (tries to) email it.
+router.post(
+  "/:id/reset-password",
+  requirePermission(PERMISSIONS.USERS_MANAGE),
+  validate({ params: userIdParamSchema }),
+  userController.resetPassword
+);
 // Permanent removal (soft-deleted, see userService.deleteUser); DELETE /:id above only deactivates.
 router.delete(
   "/:id/permanent",

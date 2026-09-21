@@ -45,18 +45,25 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-export function buildAccountCreatedEmail(input: { name: string; email: string; password: string; loginUrl: string }) {
+export function buildAccountCreatedEmail(input: {
+  name: string;
+  email: string;
+  password: string;
+  loginUrl: string;
+  kind?: "created" | "reset";
+}) {
+  const isReset = input.kind === "reset";
   const name = escapeHtml(input.name);
   const email = escapeHtml(input.email);
   const password = escapeHtml(input.password);
   const loginUrl = escapeHtml(input.loginUrl);
 
   return {
-    subject: "Your Ugnexa Catalyst account is ready",
+    subject: isReset ? "Your Ugnexa Catalyst password was reset" : "Your Ugnexa Catalyst account is ready",
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-        <h2 style="color: #0891b2;">Welcome to Ugnexa Catalyst</h2>
-        <p>Hi ${name}, an account has been created for you. Use these details to sign in:</p>
+        <h2 style="color: #0891b2;">${isReset ? "Your password was reset" : "Welcome to Ugnexa Catalyst"}</h2>
+        <p>Hi ${name}, ${isReset ? "an administrator reset your password. Use these details to sign in:" : "an account has been created for you. Use these details to sign in:"}</p>
         <table style="border-collapse: collapse; margin: 16px 0;">
           <tr><td style="padding: 4px 16px 4px 0; color: #64748b;">Email</td><td style="padding: 4px 0;"><strong>${email}</strong></td></tr>
           <tr><td style="padding: 4px 16px 4px 0; color: #64748b;">Temporary password</td><td style="padding: 4px 0;"><strong style="font-family: monospace; font-size: 15px;">${password}</strong></td></tr>
@@ -75,7 +82,12 @@ export function buildAccountCreatedEmail(input: { name: string; email: string; p
 /** Emails a newly created account its login details. Returns whether the email
  *  was actually sent, so the admin can be told to share the password another
  *  way when it wasn't — a mail failure must never fail account creation. */
-async function sendAccountCreatedEmail(input: { to: string; name: string; password: string }): Promise<boolean> {
+async function sendAccountCreatedEmail(input: {
+  to: string;
+  name: string;
+  password: string;
+  kind?: "created" | "reset";
+}): Promise<boolean> {
   if (!resend) {
     logger.warn({ to: input.to }, "RESEND_API_KEY is not set — skipping account credentials email");
     return false;
@@ -86,6 +98,7 @@ async function sendAccountCreatedEmail(input: { to: string; name: string; passwo
     email: input.to,
     password: input.password,
     loginUrl: `${config.server.clientUrl}/login`,
+    kind: input.kind,
   });
 
   try {
@@ -99,6 +112,15 @@ async function sendAccountCreatedEmail(input: { to: string; name: string; passwo
     logger.error({ to: input.to, error }, "Failed to send account credentials email via Resend");
     return false;
   }
+}
+
+/** What a create-account endpoint reports back about the credentials email.
+ *  If the email did not go out (no Resend key yet, domain still verifying, API error) the
+ *  admin gets the temporary password in the response so they can hand it over themselves —
+ *  otherwise the account would exist with nobody able to tell the person how to sign in.
+ *  Only ever returned to the admin who just created the account, and only on failure. */
+export function credentialsReport(emailSent: boolean, password: string) {
+  return emailSent ? { credentialsEmailSent: true } : { credentialsEmailSent: false, temporaryPassword: password };
 }
 
 export const mailService = {

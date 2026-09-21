@@ -4,6 +4,7 @@ import { Role, IRole } from "../models/Role.model";
 import { Project } from "../models/Project.model";
 import { Task } from "../models/Task.model";
 import { Channel } from "../models/Channel.model";
+import { config } from "../config";
 import { ApiError } from "../utils/ApiError";
 import { nameFromEmail } from "../utils/nameFromEmail";
 
@@ -118,6 +119,30 @@ async function deleteUser(userId: string, organizationId: string, actingUserId: 
   ]);
 }
 
+/** Puts an account back on the shared temporary password (e.g. someone forgot theirs, or the
+ *  account predates a change to the default). They are signed out everywhere and asked to pick
+ *  their own password again. Super Admin accounts are off-limits here, otherwise anyone who
+ *  can manage users could take over the most powerful account by resetting it. */
+async function resetToTemporaryPassword(userId: string, organizationId: string, actingUserId: string): Promise<UserWithRole> {
+  if (userId === actingUserId) throw ApiError.badRequest("Change your own password from your Profile instead");
+
+  const target = await User.findOne({ _id: userId, organizationId, deletedAt: null });
+  if (!target) throw ApiError.notFound("User not found");
+  if (target.isSuperAdmin) throw ApiError.forbidden("A Super Admin's password can't be reset here");
+
+  const passwordHash = await bcrypt.hash(config.auth.newUserTempPassword, SALT_ROUNDS);
+  const user = await User.findByIdAndUpdate(
+    target._id,
+    {
+      $set: { passwordHash, mustChangePassword: true, passwordResetTokenHash: null, passwordResetExpires: null },
+      $inc: { tokenVersion: 1 },
+    },
+    { new: true }
+  ).populate<{ roleId: IRole }>("roleId");
+  if (!user) throw ApiError.notFound("User not found");
+  return user;
+}
+
 export const userService = {
   createUser,
   listUsers,
@@ -126,4 +151,5 @@ export const userService = {
   updateUser,
   deactivateUser,
   deleteUser,
+  resetToTemporaryPassword,
 };

@@ -2,7 +2,8 @@ import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiResponse } from "../utils/ApiResponse";
 import { userService, UserWithRole } from "../services/user.service";
-import { mailService } from "../services/mail.service";
+import { config } from "../config";
+import { credentialsReport, mailService } from "../services/mail.service";
 
 export function toPublicUser(user: UserWithRole) {
   return {
@@ -25,7 +26,7 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
     name: user.name,
     password: req.body.password,
   });
-  res.status(201).json(new ApiResponse(201, { ...toPublicUser(user), credentialsEmailSent }, "User created"));
+  res.status(201).json(new ApiResponse(201, { ...toPublicUser(user), ...credentialsReport(credentialsEmailSent, req.body.password) }, "User created"));
 });
 
 export const listUsers = asyncHandler(async (req: Request, res: Response) => {
@@ -51,4 +52,11 @@ export const deactivateUser = asyncHandler(async (req: Request, res: Response) =
 export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
   await userService.deleteUser(req.params.id, req.orgId!, req.user!.id);
   res.json(new ApiResponse(200, null, "User deleted"));
+});
+
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+  const user = await userService.resetToTemporaryPassword(req.params.id, req.orgId!, req.user!.id);
+  const password = config.auth.newUserTempPassword;
+  const emailSent = await mailService.sendAccountCreatedEmail({ to: user.email, name: user.name, password, kind: "reset" });
+  res.json(new ApiResponse(200, { ...toPublicUser(user), ...credentialsReport(emailSent, password) }, "Password reset"));
 });

@@ -36,7 +36,11 @@ describe("Creating an account with just email + password", () => {
     // No Resend key in tests, so the email is skipped — and the API says so
     // instead of pretending, letting the UI tell the admin to share it manually.
     expect(created.body.data.credentialsEmailSent).toBe(false);
-    expect(JSON.stringify(created.body)).not.toContain("temp-pass-123");
+    // …and because nothing was emailed, the admin is handed the password to pass on themselves.
+    expect(created.body.data.temporaryPassword).toBe("temp-pass-123");
+    // It is never exposed anywhere else.
+    const list = await request(app).get("/api/users").set("Authorization", `Bearer ${admin.token}`);
+    expect(JSON.stringify(list.body)).not.toContain("temp-pass-123");
 
     const member = await login("juan.delacruz@acme.test", "temp-pass-123");
     expect(member.user.mustChangePassword).toBe(true);
@@ -100,7 +104,10 @@ describe("Shared temporary password", () => {
       .set("Authorization", `Bearer ${admin.token}`)
       .send({ email: "hr.person@acme.test", roleId });
     expect(created.status).toBe(201);
-    expect(JSON.stringify(created.body)).not.toContain(DEFAULT_PASSWORD);
+    expect(created.body.data.credentialsEmailSent).toBe(false);
+    expect(created.body.data.temporaryPassword).toBe(DEFAULT_PASSWORD);
+    const list = await request(app).get("/api/users").set("Authorization", `Bearer ${admin.token}`);
+    expect(JSON.stringify(list.body)).not.toContain(DEFAULT_PASSWORD);
 
     const member = await login("hr.person@acme.test", DEFAULT_PASSWORD);
     expect(member.user.mustChangePassword).toBe(true);
@@ -122,6 +129,7 @@ describe("Shared temporary password", () => {
       .set("Authorization", `Bearer ${root.token}`)
       .send({ organizationName: "Client Co", name: "Client Admin", email: "boss@client.test" });
     expect(org.status).toBe(201);
+    expect(org.body.data.temporaryPassword).toBe(DEFAULT_PASSWORD);
     const clientAdmin = await login("boss@client.test", DEFAULT_PASSWORD);
     expect(clientAdmin.user.mustChangePassword).toBe(true);
   });
