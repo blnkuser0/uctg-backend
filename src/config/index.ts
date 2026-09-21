@@ -39,6 +39,22 @@ const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
   console.error("Invalid environment configuration:", parsed.error.flatten().fieldErrors);
+
+  // A variable that "isn't there" is usually one that was set on the wrong service/environment,
+  // never deployed, or saved under a slightly different name (stray space, wrong case). Print
+  // the NAMES (never the values) of what this process can actually see so that is obvious.
+  const relevantName = /^(NODE_ENV|PORT|CLIENT_URL|BACKEND_URL|MONGO|JWT|UPLOAD|MAX_UPLOAD|RESEND|NEW_USER)/i;
+  console.error(
+    "Variables visible to this process (names only; quotes reveal hidden spaces):",
+    Object.keys(process.env)
+      .filter((name) => relevantName.test(name.trim()))
+      .map((name) => JSON.stringify(name))
+  );
+  const host = ["RAILWAY_ENVIRONMENT_NAME", "RAILWAY_SERVICE_NAME", "RENDER_SERVICE_NAME"]
+    .filter((name) => process.env[name])
+    .map((name) => `${name}=${process.env[name]}`);
+  if (host.length > 0) console.error("Running as:", host.join(", "));
+
   throw new Error("Invalid environment configuration");
 }
 

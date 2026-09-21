@@ -17,7 +17,7 @@ import cookieParser from "cookie-parser";
 import mongoSanitize from "express-mongo-sanitize";
 
 import { config } from "./config";
-import { connectDB, disconnectDB } from "./config/db";
+import { connectDBWithRetry, disconnectDB } from "./config/db";
 import { logger, httpLogger } from "./utils/logger";
 import { globalLimiter } from "./middlewares/rateLimit.middleware";
 import { correlationIdMiddleware } from "./middlewares/correlationId.middleware";
@@ -70,11 +70,13 @@ app.use("/api", routes);
 app.use(errorHandler);
 
 async function start(): Promise<void> {
-  await connectDB();
-
+  // Listen first, then connect: a hosting platform's health check must find the server even while
+  // the database is slow or briefly unreachable; /api/health reports `dbConnected` honestly.
   httpServer.listen(config.server.port, () => {
     logger.info(`Server listening on port ${config.server.port} [${config.env}]`);
   });
+
+  await connectDBWithRetry();
 
   deadlineReminderService.startDeadlineReminderSweep();
 }
