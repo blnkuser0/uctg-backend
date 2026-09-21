@@ -4,8 +4,14 @@ import { z } from "zod";
 // createOrgSchema — registration is Super-Admin-only now, reached via
 // /api/platform/organizations, not this file's routes.
 
+// Pasted emails can carry invisible zero-width characters that make a valid address fail.
+const INVISIBLE_CHARS = /[\u200B-\u200D\u2060\uFEFF]/g;
+
 export const loginSchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
+  email: z
+    .string()
+    .transform((value) => value.replace(INVISIBLE_CHARS, ""))
+    .pipe(z.string().trim().toLowerCase().email()),
   password: z.string().min(1),
 });
 

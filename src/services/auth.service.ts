@@ -167,6 +167,19 @@ export async function registerOrganization(input: {
   throw transactionError;
 }
 
+// Credentials are usually copy-pasted from an email or chat message, which routinely drags
+// along a trailing space/newline or an invisible zero-width character. Accept the password
+// as typed first, then with that junk removed — it still has to match the stored hash exactly.
+const INVISIBLE_CHARS = /[\u200B-\u200D\u2060\uFEFF]/g;
+
+async function passwordMatches(entered: string, hash: string): Promise<boolean> {
+  const candidates = new Set([entered, entered.trim(), entered.replace(INVISIBLE_CHARS, "").trim()]);
+  for (const candidate of candidates) {
+    if (candidate && (await bcrypt.compare(candidate, hash))) return true;
+  }
+  return false;
+}
+
 async function login(input: { email: string; password: string }): Promise<{ user: IUser; tokens: AuthTokens }> {
   const user = await User.findOne({ email: input.email }).select("+passwordHash");
   if (!user) {
@@ -176,8 +189,7 @@ async function login(input: { email: string; password: string }): Promise<{ user
     throw ApiError.forbidden("Account is deactivated");
   }
 
-  const passwordMatches = await bcrypt.compare(input.password, user.passwordHash);
-  if (!passwordMatches) {
+  if (!(await passwordMatches(input.password, user.passwordHash))) {
     throw ApiError.unauthorized("Invalid email or password");
   }
 
@@ -214,8 +226,7 @@ async function changePassword(userId: string, currentPassword: string, newPasswo
   const user = await User.findById(userId).select("+passwordHash");
   if (!user) throw ApiError.notFound("User not found");
 
-  const matches = await bcrypt.compare(currentPassword, user.passwordHash);
-  if (!matches) throw ApiError.badRequest("Current password is incorrect");
+  if (!(await passwordMatches(currentPassword, user.passwordHash))) throw ApiError.badRequest("Current password is incorrect");
 
   user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
   user.mustChangePassword = false;

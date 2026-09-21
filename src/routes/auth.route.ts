@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { auth } from "../middlewares/auth.middleware";
 import { validate } from "../middlewares/validate.middleware";
-import { authLimiter } from "../middlewares/rateLimit.middleware";
+import { authLimiter, loginLimiter } from "../middlewares/rateLimit.middleware";
 import { upload } from "../middlewares/upload.middleware";
 import {
   loginSchema,
@@ -16,7 +16,7 @@ const router = Router();
 
 // No public /register — Organizations/accounts are Super-Admin-provisioned
 // only now, via /api/platform (see platform.route.ts).
-router.post("/login", authLimiter, validate({ body: loginSchema }), authController.login);
+router.post("/login", authLimiter, loginLimiter, validate({ body: loginSchema }), authController.login);
 router.post("/refresh-tokens", authController.refreshTokens);
 router.post("/logout", auth(), authController.logout);
 router.get("/me", auth(), authController.getMe);
