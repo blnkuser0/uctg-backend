@@ -14,7 +14,7 @@ export const getMyIdCard = asyncHandler(async (req: Request, res: Response) => {
 // Anyone's card (they carry a QR that opens their identity) is limited to
 // the platform Super Admin, or a users.manage holder within their own org.
 export const getUserIdCard = asyncHandler(async (req: Request, res: Response) => {
-  const target = await User.findById(req.params.id).select("organizationId");
+  const target = await User.findOne({ _id: req.params.id, deletedAt: null }).select("organizationId");
   if (!target) throw ApiError.notFound("User not found");
 
   const sameOrgManager =

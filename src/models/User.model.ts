@@ -24,6 +24,10 @@ export interface IUser extends Document {
   roleId: Types.ObjectId;
   avatarUrl: string | null;
   isActive: boolean;
+  // Set when an admin deletes the account. The row is kept so old comments,
+  // messages and time records still show who wrote them, but it is hidden from
+  // every list, can't sign in, and its email is freed for reuse.
+  deletedAt: Date | null;
   tokenVersion: number;
   lastLoginAt: Date | null;
   passwordResetTokenHash: string | null;
@@ -62,6 +66,7 @@ const UserSchema = new Schema<IUser>(
     roleId: { type: Schema.Types.ObjectId, ref: "Role", required: true, index: true },
     avatarUrl: { type: String, default: null },
     isActive: { type: Boolean, default: true },
+    deletedAt: { type: Date, default: null, index: true },
     tokenVersion: { type: Number, default: 0 },
     lastLoginAt: { type: Date, default: null },
     passwordResetTokenHash: { type: String, default: null, select: false },

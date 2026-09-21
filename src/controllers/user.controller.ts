@@ -47,3 +47,8 @@ export const deactivateUser = asyncHandler(async (req: Request, res: Response) =
   const user = await userService.deactivateUser(req.params.id, req.orgId!);
   res.json(new ApiResponse(200, toPublicUser(user), "User deactivated"));
 });
+
+export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
+  await userService.deleteUser(req.params.id, req.orgId!, req.user!.id);
+  res.json(new ApiResponse(200, null, "User deleted"));
+});

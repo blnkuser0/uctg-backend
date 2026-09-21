@@ -29,5 +29,12 @@ router.patch(
   userController.updateUser
 );
 router.delete("/:id", requirePermission(PERMISSIONS.USERS_MANAGE), userController.deactivateUser);
+// Permanent removal (soft-deleted, see userService.deleteUser); DELETE /:id above only deactivates.
+router.delete(
+  "/:id/permanent",
+  requirePermission(PERMISSIONS.USERS_MANAGE),
+  validate({ params: userIdParamSchema }),
+  userController.deleteUser
+);
 
 export default router;
