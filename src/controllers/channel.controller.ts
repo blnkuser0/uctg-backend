@@ -38,3 +38,23 @@ export const markRead = asyncHandler(async (req: Request, res: Response) => {
   await channelService.markRead(req.orgId!, req.params.id, req.user!.id, req.isSuperAdmin!);
   res.json(new ApiResponse(200, null, "Marked read"));
 });
+
+export const markUnread = asyncHandler(async (req: Request, res: Response) => {
+  await channelService.markUnread(req.orgId!, req.params.id, req.user!.id, req.isSuperAdmin!);
+  res.json(new ApiResponse(200, null, "Marked unread"));
+});
+
+export const setPinned = asyncHandler(async (req: Request, res: Response) => {
+  await channelService.setPinned(req.params.id, req.user!.id, req.isSuperAdmin!, req.body.pinned);
+  res.json(new ApiResponse(200, null, req.body.pinned ? "Pinned" : "Unpinned"));
+});
+
+export const setMuted = asyncHandler(async (req: Request, res: Response) => {
+  await channelService.setMuted(req.params.id, req.user!.id, req.isSuperAdmin!, req.body.muted);
+  res.json(new ApiResponse(200, null, req.body.muted ? "Muted" : "Unmuted"));
+});
+
+export const hideDm = asyncHandler(async (req: Request, res: Response) => {
+  await channelService.hideDm(req.params.id, req.user!.id, req.isSuperAdmin!);
+  res.json(new ApiResponse(200, null, "Conversation removed"));
+});

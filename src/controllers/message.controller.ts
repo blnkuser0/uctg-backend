@@ -52,3 +52,33 @@ export const deleteMessage = asyncHandler(async (req: Request, res: Response) =>
   });
   res.json(new ApiResponse(200, null, "Message deleted"));
 });
+
+export const reactToMessage = asyncHandler(async (req: Request, res: Response) => {
+  const message = await messageService.reactToMessage(req.params.id, req.user!.id, req.isSuperAdmin!, req.body.emoji);
+  // Reuses the same event the composer's edits already push — every open client already
+  // reconciles a message by id on this event, so reactions just show up.
+  emitToChannel(message.channelId.toString(), "chat:message:updated", { channelId: message.channelId, message });
+  res.json(new ApiResponse(200, message, "Reaction updated"));
+});
+
+export const togglePinMessage = asyncHandler(async (req: Request, res: Response) => {
+  const message = await messageService.togglePinMessage(req.params.id, req.user!.id, req.isSuperAdmin!);
+  emitToChannel(message.channelId.toString(), "chat:message:updated", { channelId: message.channelId, message });
+  res.json(new ApiResponse(200, message, message.pinnedAt ? "Message pinned" : "Message unpinned"));
+});
+
+export const listPinned = asyncHandler(async (req: Request, res: Response) => {
+  const messages = await messageService.listPinned(req.params.id, req.user!.id, req.isSuperAdmin!);
+  res.json(new ApiResponse(200, messages, "Pinned messages"));
+});
+
+export const searchInChannel = asyncHandler(async (req: Request, res: Response) => {
+  const messages = await messageService.searchInChannel(
+    req.params.id,
+    req.user!.id,
+    req.isSuperAdmin!,
+    req.query.q as string,
+    req.query.limit as number | undefined
+  );
+  res.json(new ApiResponse(200, messages, "Search results"));
+});
