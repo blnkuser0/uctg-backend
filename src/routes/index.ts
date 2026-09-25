@@ -18,6 +18,7 @@ import messageRoute from "./message.route";
 import organizationRoute from "./organization.route";
 import platformRoute from "./platform.route";
 import publicRoute from "./public.route";
+import accomplishmentRoute from "./accomplishment.route";
 
 const router = Router();
 
@@ -40,5 +41,6 @@ router.use("/messages", messageRoute);
 router.use("/organization", organizationRoute);
 router.use("/platform", platformRoute);
 router.use("/public", publicRoute);
+router.use("/accomplishments", accomplishmentRoute);
 
 export default router;
