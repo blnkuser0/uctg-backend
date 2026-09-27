@@ -16,7 +16,13 @@ export const getToday = asyncHandler(async (req: Request, res: Response) => {
 
 export const getMonthSummary = asyncHandler(async (req: Request, res: Response) => {
   const [year, month] = (req.query.month as string).split("-").map(Number);
-  const summary = await timeLogService.getMonthSummary(req.orgId!, req.user!.id, year, month);
+  const viewedUserId = await timeLogService.resolveViewedUserId(
+    req.orgId!,
+    req.user!.id,
+    req.permissions ?? [],
+    req.query.userId as string | undefined
+  );
+  const summary = await timeLogService.getMonthSummary(req.orgId!, viewedUserId, year, month);
   res.json(new ApiResponse(200, summary, "Attendance calendar"));
 });
 
@@ -24,4 +30,20 @@ export const getTeamDaySummary = asyncHandler(async (req: Request, res: Response
   const date = parsePhDateKey(req.query.date as string);
   const entries = await timeLogService.getTeamDaySummary(req.orgId!, date);
   res.json(new ApiResponse(200, entries, "Team attendance"));
+});
+
+export const getPeriodSummary = asyncHandler(async (req: Request, res: Response) => {
+  const viewedUserId = await timeLogService.resolveViewedUserId(
+    req.orgId!,
+    req.user!.id,
+    req.permissions ?? [],
+    req.query.userId as string | undefined
+  );
+  const summary = await timeLogService.getPeriodSummary(req.orgId!, viewedUserId, req.query.date as string);
+  res.json(new ApiResponse(200, summary, "Attendance week and cut-off summary"));
+});
+
+export const getTeamPeriodSummary = asyncHandler(async (req: Request, res: Response) => {
+  const entries = await timeLogService.getTeamPeriodSummary(req.orgId!, req.query.date as string);
+  res.json(new ApiResponse(200, entries, "Team attendance week and cut-off summary"));
 });

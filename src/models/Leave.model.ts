@@ -1,5 +1,9 @@
 import { Schema, model, Document, Types } from "mongoose";
 
+// Just a label for now — no per-type balances, accrual, or rules yet.
+export const LEAVE_TYPES = ["vacation", "sick", "emergency", "maternity", "paternity"] as const;
+export type LeaveType = (typeof LEAVE_TYPES)[number];
+
 export const LEAVE_DECISION_STATUSES = ["pending", "approved", "rejected"] as const;
 export type LeaveDecisionStatus = (typeof LEAVE_DECISION_STATUSES)[number];
 
@@ -9,6 +13,8 @@ export interface ILeave extends Document {
   userId: Types.ObjectId;
   startDate: Date;
   endDate: Date;
+  // Optional in the type only because leaves filed before this field existed don't have one.
+  leaveType?: LeaveType;
   reason: string;
   hrStatus: LeaveDecisionStatus;
   hrDecidedBy: Types.ObjectId | null;
@@ -29,6 +35,7 @@ const LeaveSchema = new Schema<ILeave>(
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
+    leaveType: { type: String, enum: LEAVE_TYPES },
     reason: { type: String, required: true, trim: true, maxlength: 1000 },
 
     hrStatus: { type: String, enum: LEAVE_DECISION_STATUSES, default: "pending" },

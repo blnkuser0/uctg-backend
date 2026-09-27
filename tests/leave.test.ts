@@ -74,7 +74,7 @@ async function setupWithIds() {
   return { adminToken, adminId, hr, member };
 }
 
-const LEAVE_INPUT = { startDate: "2026-10-01", endDate: "2026-10-03", reason: "Family trip" };
+const LEAVE_INPUT = { startDate: "2026-10-01", endDate: "2026-10-03", leaveType: "vacation", reason: "Family trip" };
 
 describe("Leave requests — HR/Admin dual approval", () => {
   it("lets any user submit a leave request, starting fully pending", async () => {
@@ -88,6 +88,29 @@ describe("Leave requests — HR/Admin dual approval", () => {
     expect(res.body.data.hrStatus).toBe("pending");
     expect(res.body.data.adminStatus).toBe("pending");
     expect(res.body.data.status).toBe("pending");
+    expect(res.body.data.leaveType).toBe("vacation");
+  });
+
+  it("accepts each of the five leave types, and rejects a missing or unknown one", async () => {
+    const { memberToken } = await setup();
+    for (const leaveType of ["vacation", "sick", "emergency", "maternity", "paternity"]) {
+      const res = await request(app)
+        .post("/api/leaves")
+        .set("Authorization", `Bearer ${memberToken}`)
+        .send({ ...LEAVE_INPUT, leaveType });
+      expect(res.status).toBe(201);
+      expect(res.body.data.leaveType).toBe(leaveType);
+    }
+
+    const { leaveType: _omitted, ...withoutType } = LEAVE_INPUT;
+    const missing = await request(app).post("/api/leaves").set("Authorization", `Bearer ${memberToken}`).send(withoutType);
+    expect(missing.status).toBe(400);
+
+    const unknown = await request(app)
+      .post("/api/leaves")
+      .set("Authorization", `Bearer ${memberToken}`)
+      .send({ ...LEAVE_INPUT, leaveType: "study" });
+    expect(unknown.status).toBe(400);
   });
 
   it("HR approve + Admin reject => overall rejected (Admin has final say)", async () => {
@@ -183,7 +206,59 @@ describe("Leave requests — HR/Admin dual approval", () => {
     const blockedCancel = await request(app)
       .delete(`/api/leaves/${secondId}`)
       .set("Authorization", `Bearer ${memberToken}`);
-    expect(blockedCancel.status).toBe(400);
+    expect(blockedCancel.status).toBe(403);
+  });
+
+  it("locks the requester out of cancelling as soon as EITHER HR or Admin has acted (even if not final)", async () => {
+    const { memberToken, hrToken } = await setup();
+    const created = await request(app).post("/api/leaves").set("Authorization", `Bearer ${memberToken}`).send(LEAVE_INPUT);
+    const leaveId = created.body.data._id;
+
+    // HR alone acts — overall status is still "pending" (Admin hasn't decided), but it's no longer untouched.
+    await request(app).patch(`/api/leaves/${leaveId}/hr-decision`).set("Authorization", `Bearer ${hrToken}`).send({ status: "approved" });
+
+    const blocked = await request(app).delete(`/api/leaves/${leaveId}`).set("Authorization", `Bearer ${memberToken}`);
+    expect(blocked.status).toBe(403);
+
+    const stillThere = await request(app).get("/api/leaves/mine").set("Authorization", `Bearer ${memberToken}`);
+    expect(stillThere.body.data).toHaveLength(1);
+  });
+
+  it("locks the requester out after a rejection too, and after an Admin-only action", async () => {
+    const { memberToken, hrToken, adminToken } = await setup();
+    const rejected = await request(app).post("/api/leaves").set("Authorization", `Bearer ${memberToken}`).send(LEAVE_INPUT);
+    await request(app).patch(`/api/leaves/${rejected.body.data._id}/hr-decision`).set("Authorization", `Bearer ${hrToken}`).send({ status: "rejected" });
+    const a = await request(app).delete(`/api/leaves/${rejected.body.data._id}`).set("Authorization", `Bearer ${memberToken}`);
+    expect(a.status).toBe(403);
+
+    const adminActed = await request(app).post("/api/leaves").set("Authorization", `Bearer ${memberToken}`).send(LEAVE_INPUT);
+    await request(app).patch(`/api/leaves/${adminActed.body.data._id}/admin-decision`).set("Authorization", `Bearer ${adminToken}`).send({ status: "rejected" });
+    const b = await request(app).delete(`/api/leaves/${adminActed.body.data._id}`).set("Authorization", `Bearer ${memberToken}`);
+    expect(b.status).toBe(403);
+  });
+
+  it("lets HR or Admin delete a leave request that has been acted on", async () => {
+    const { memberToken, hrToken, adminToken } = await setup();
+
+    const first = await request(app).post("/api/leaves").set("Authorization", `Bearer ${memberToken}`).send(LEAVE_INPUT);
+    await request(app).patch(`/api/leaves/${first.body.data._id}/hr-decision`).set("Authorization", `Bearer ${hrToken}`).send({ status: "approved" });
+    const byHr = await request(app).delete(`/api/leaves/${first.body.data._id}`).set("Authorization", `Bearer ${hrToken}`);
+    expect(byHr.status).toBe(200);
+
+    const second = await request(app).post("/api/leaves").set("Authorization", `Bearer ${memberToken}`).send(LEAVE_INPUT);
+    await request(app).patch(`/api/leaves/${second.body.data._id}/admin-decision`).set("Authorization", `Bearer ${adminToken}`).send({ status: "approved" });
+    const byAdmin = await request(app).delete(`/api/leaves/${second.body.data._id}`).set("Authorization", `Bearer ${adminToken}`);
+    expect(byAdmin.status).toBe(200);
+
+    const remaining = await request(app).get("/api/leaves/mine").set("Authorization", `Bearer ${memberToken}`);
+    expect(remaining.body.data).toHaveLength(0);
+  });
+
+  it("does not let an ordinary member delete someone else's request", async () => {
+    const { adminToken, memberToken } = await setup();
+    const mine = await request(app).post("/api/leaves").set("Authorization", `Bearer ${adminToken}`).send(LEAVE_INPUT);
+    const res = await request(app).delete(`/api/leaves/${mine.body.data._id}`).set("Authorization", `Bearer ${memberToken}`);
+    expect(res.status).toBe(404);
   });
 
   it("lets a member see only their own requests via /mine", async () => {

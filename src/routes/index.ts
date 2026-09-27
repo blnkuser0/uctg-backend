@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { realtimeSync } from "../middlewares/realtimeSync.middleware";
 import authRoute from "./auth.route";
 import userRoute from "./user.route";
 import timeLogRoute from "./timeLog.route";
@@ -21,6 +22,9 @@ import publicRoute from "./public.route";
 import accomplishmentRoute from "./accomplishment.route";
 
 const router = Router();
+
+// Every successful write to a synced resource pings the org to refetch it (see the middleware).
+router.use(realtimeSync);
 
 router.use("/auth", authRoute);
 router.use("/users", userRoute);

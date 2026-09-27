@@ -64,7 +64,7 @@ describe("Roles & permissions", () => {
     const leave = await request(app)
       .post("/api/leaves")
       .set("Authorization", `Bearer ${supervisorToken}`)
-      .send({ startDate: "2026-10-01", endDate: "2026-10-02", reason: "test" });
+      .send({ startDate: "2026-10-01", endDate: "2026-10-02", leaveType: "sick", reason: "test" });
 
     const hrDecision = await request(app)
       .patch(`/api/leaves/${leave.body.data._id}/hr-decision`)

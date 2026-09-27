@@ -25,6 +25,7 @@ router.patch(
   validate({ body: leaveDecisionSchema }),
   leaveController.adminDecision
 );
-router.delete("/:id", leaveController.cancelLeave);
+// Requester: only while HR and Admin have both not acted. HR/Admin (either approval permission): any time.
+router.delete("/:id", leaveController.deleteLeave);
 
 export default router;

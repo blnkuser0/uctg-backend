@@ -4,6 +4,8 @@ import { User } from "../models/User.model";
 import { computeClockState, isValidTransition, ClockState } from "../utils/timeLogState";
 import { DaySummary, expandApprovedLeaveDays, summarizeRange } from "../utils/attendance";
 import { phStartOfDay, phEndOfDay, phMonthRange } from "../utils/phTime";
+import { PeriodSummary, buildPeriodSummary, summaryWindow } from "../utils/attendancePeriods";
+import { PERMISSIONS } from "../constants/permissions";
 import { ApiError } from "../utils/ApiError";
 
 async function getTodayLogs(organizationId: string, userId: string): Promise<ITimeLog[]> {
@@ -104,7 +106,62 @@ async function getTeamDaySummary(organizationId: string, date: Date): Promise<Te
   });
 }
 
+export interface TeamPeriodEntry {
+  userId: string;
+  name: string;
+  summary: PeriodSummary;
+}
+
+async function getPeriodSummary(organizationId: string, userId: string, dateKey: string): Promise<PeriodSummary> {
+  const { start, end } = summaryWindow(dateKey);
+  const logs = await TimeLog.find({ organizationId, userId, timestamp: { $gte: start, $lte: end } }).sort({ timestamp: 1 });
+  return buildPeriodSummary(logs, dateKey);
+}
+
+async function getTeamPeriodSummary(organizationId: string, dateKey: string): Promise<TeamPeriodEntry[]> {
+  const { start, end } = summaryWindow(dateKey);
+  const [users, logs] = await Promise.all([
+    User.find({ organizationId, isActive: true }, { _id: 1, name: 1 }).sort({ name: 1 }),
+    TimeLog.find({ organizationId, timestamp: { $gte: start, $lte: end } }).sort({ timestamp: 1 }),
+  ]);
+
+  const logsByUser = new Map<string, ITimeLog[]>();
+  for (const log of logs) {
+    const key = log.userId.toString();
+    const existing = logsByUser.get(key);
+    if (existing) existing.push(log);
+    else logsByUser.set(key, [log]);
+  }
+
+  return users.map((user) => {
+    const userId = user._id.toString();
+    return { userId, name: user.name, summary: buildPeriodSummary(logsByUser.get(userId) ?? [], dateKey) };
+  });
+}
+
+/**
+ * Whose attendance the caller is asking about: their own by default; someone else's only with
+ * ATTENDANCE_VIEW_ALL, and only within the caller's own organization.
+ */
+async function resolveViewedUserId(
+  organizationId: string,
+  requesterId: string,
+  permissions: string[],
+  requestedUserId?: string
+): Promise<string> {
+  if (!requestedUserId || requestedUserId === requesterId) return requesterId;
+  if (!permissions.includes(PERMISSIONS.ATTENDANCE_VIEW_ALL)) {
+    throw ApiError.forbidden("You do not have permission to view another employee's attendance");
+  }
+  const target = await User.findOne({ _id: requestedUserId, organizationId }, { _id: 1 });
+  if (!target) throw ApiError.notFound("User not found");
+  return requestedUserId;
+}
+
 export const timeLogService = {
+  getPeriodSummary,
+  getTeamPeriodSummary,
+  resolveViewedUserId,
   getTodayWithState,
   clock,
   getMonthSummary,

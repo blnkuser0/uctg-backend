@@ -40,7 +40,7 @@ export const adminDecision = asyncHandler(async (req: Request, res: Response) =>
   res.json(new ApiResponse(200, leave, "Admin decision recorded"));
 });
 
-export const cancelLeave = asyncHandler(async (req: Request, res: Response) => {
-  await leaveService.cancelOwn(req.orgId!, req.user!.id, req.params.id);
-  res.json(new ApiResponse(200, null, "Leave request cancelled"));
+export const deleteLeave = asyncHandler(async (req: Request, res: Response) => {
+  await leaveService.deleteLeave(req.orgId!, req.user!.id, req.permissions ?? [], req.params.id);
+  res.json(new ApiResponse(200, null, "Leave request removed"));
 });

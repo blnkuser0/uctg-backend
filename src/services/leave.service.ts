@@ -1,4 +1,4 @@
-import { Leave, ILeave, LeaveDecisionStatus } from "../models/Leave.model";
+import { Leave, ILeave, LeaveDecisionStatus, LeaveType } from "../models/Leave.model";
 import { User } from "../models/User.model";
 import { PERMISSIONS } from "../constants/permissions";
 import { roleService } from "./role.service";
@@ -24,13 +24,14 @@ export function computeOverallStatus(
 async function createLeave(
   organizationId: string,
   userId: string,
-  input: { startDate: Date; endDate: Date; reason: string }
+  input: { startDate: Date; endDate: Date; leaveType: LeaveType; reason: string }
 ): Promise<ILeave> {
   const leave = await Leave.create({
     organizationId,
     userId,
     startDate: input.startDate,
     endDate: input.endDate,
+    leaveType: input.leaveType,
     reason: input.reason,
   });
 
@@ -147,12 +148,32 @@ async function setAdminDecision(
   return leave;
 }
 
-async function cancelOwn(organizationId: string, userId: string, leaveId: string): Promise<void> {
-  const leave = await Leave.findOne({ _id: leaveId, organizationId, userId });
+/**
+ * Removes a leave request. The requester can cancel their own only while nobody has acted on it —
+ * once HR or Admin has approved/rejected it (either one), it's part of the record and only someone
+ * who holds an approval permission (HR or Admin) can delete it.
+ */
+async function deleteLeave(
+  organizationId: string,
+  requesterId: string,
+  permissions: string[],
+  leaveId: string
+): Promise<void> {
+  const leave = await Leave.findOne({ _id: leaveId, organizationId });
   if (!leave) throw ApiError.notFound("Leave request not found");
-  if (leave.status !== "pending") {
-    throw ApiError.badRequest("Only a pending leave request can be cancelled");
+
+  const isOwner = leave.userId.toString() === requesterId;
+  const canModerate =
+    permissions.includes(PERMISSIONS.LEAVES_APPROVE_HR) || permissions.includes(PERMISSIONS.LEAVES_APPROVE_ADMIN);
+
+  // Someone else's request that you have no moderation rights over: same answer as "doesn't exist".
+  if (!isOwner && !canModerate) throw ApiError.notFound("Leave request not found");
+
+  const hasBeenActedOn = leave.hrStatus !== "pending" || leave.adminStatus !== "pending";
+  if (hasBeenActedOn && !canModerate) {
+    throw ApiError.forbidden("This leave request has already been reviewed, so only HR or an admin can delete it");
   }
+
   await leave.deleteOne();
 }
 
@@ -162,5 +183,5 @@ export const leaveService = {
   listMine,
   setHrDecision,
   setAdminDecision,
-  cancelOwn,
+  deleteLeave,
 };

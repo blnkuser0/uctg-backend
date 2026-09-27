@@ -3,6 +3,7 @@ import { Server, Socket } from "socket.io";
 import { jwtService } from "../services/jwt.service";
 import { setSocketIO } from "../utils/socketEmitter";
 import { User } from "../models/User.model";
+import { Project } from "../models/Project.model";
 import { logger } from "../utils/logger";
 import { config } from "../config";
 
@@ -79,6 +80,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
         const organizationId = user.organizationId.toString();
         socket.organizationId = organizationId;
         socket.join(`org:${organizationId}`);
+
+        // Every project this person is a member of — so pm:* events reach them on any page
+        // (and across organizations), not only while a board is open.
+        void Project.find({ memberIds: socket.userId, deletedAt: null })
+          .select("_id")
+          .then((projects) => projects.forEach((project) => socket.join(`project:${project._id}`)))
+          .catch((err) => logger.error({ err, userId: socket.userId }, "Failed to join project rooms"));
 
         // Tell the newly-connected client who's already online before it can have missed any
         // presence:online broadcasts, then tell everyone else about this one.

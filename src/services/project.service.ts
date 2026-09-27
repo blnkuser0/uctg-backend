@@ -4,6 +4,7 @@ import { User } from "../models/User.model";
 import { PERMISSIONS, Permission } from "../constants/permissions";
 import { notificationService } from "./notification.service";
 import { channelService } from "./channel.service";
+import { closeProjectRoom, joinUserToProject, removeUserFromProject } from "../utils/socketEmitter";
 import { ApiError } from "../utils/ApiError";
 
 const DEFAULT_STAGES = [
@@ -60,6 +61,7 @@ async function createProject(
   );
 
   await channelService.createProjectChannel(organizationId, project._id.toString(), project.name, [userId], userId);
+  joinUserToProject(userId, project._id.toString());
 
   return project;
 }
@@ -137,6 +139,7 @@ async function deleteProject(
   const project = await assertProjectAccess(organizationId, projectId, userId, permissions, isSuperAdmin);
   project.deletedAt = new Date();
   await project.save();
+  closeProjectRoom(projectId);
 }
 
 async function addMember(
@@ -152,6 +155,7 @@ async function addMember(
     project.memberIds.push(newMemberId as unknown as IProject["memberIds"][number]);
     await project.save();
     await channelService.addProjectMember(projectId, newMemberId);
+    joinUserToProject(newMemberId, projectId);
 
     if (newMemberId !== userId) {
       const actor = await User.findById(userId);
@@ -181,6 +185,7 @@ async function removeMember(
   project.memberIds = project.memberIds.filter((id) => id.toString() !== memberIdToRemove);
   await project.save();
   await channelService.removeProjectMember(projectId, memberIdToRemove);
+  removeUserFromProject(memberIdToRemove, projectId);
   return project;
 }
 

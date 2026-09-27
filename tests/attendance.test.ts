@@ -94,7 +94,7 @@ describe("Attendance calendar — personal", () => {
     const created = await request(app)
       .post("/api/leaves")
       .set("Authorization", `Bearer ${member.token}`)
-      .send({ startDate: iso, endDate: iso, reason: "Personal" });
+      .send({ startDate: iso, endDate: iso, leaveType: "emergency", reason: "Personal" });
 
     await request(app)
       .patch(`/api/leaves/${created.body.data._id}/admin-decision`)
