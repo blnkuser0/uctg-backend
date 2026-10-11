@@ -1,6 +1,6 @@
 import { Schema, model, Document, Types } from "mongoose";
 
-export const TIME_LOG_TYPES = ["time-in", "time-out", "break-in", "break-out", "lunch-in", "lunch-out"] as const;
+export const TIME_LOG_TYPES = ["time-in", "time-out", "break-in", "break-out"] as const;
 export type TimeLogType = (typeof TIME_LOG_TYPES)[number];
 
 export interface ITimeLog extends Document {

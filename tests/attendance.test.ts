@@ -83,6 +83,40 @@ describe("Attendance calendar — personal", () => {
     expect(emptySummary.status).toBe(isWeekend(emptyDay) ? "weekend" : "absent");
   });
 
+  it("computes break minutes for a day, separate from worked minutes", async () => {
+    const { member } = await setup();
+    const now = new Date();
+    const breakDay = new Date(now.getFullYear(), now.getMonth() - 1, 12);
+
+    const usersRes = await request(app).get("/api/users").set("Authorization", `Bearer ${member.token}`);
+    const organizationId = usersRes.body.data[0].organizationId as string;
+
+    const breakKey = `${breakDay.getFullYear()}-${String(breakDay.getMonth() + 1).padStart(2, "0")}-${String(breakDay.getDate()).padStart(2, "0")}`;
+    const phMidnight = parsePhDateKey(breakKey);
+    const timeIn = new Date(phMidnight.getTime() + 9 * 60 * 60 * 1000); // 9am PH
+    const breakIn = new Date(phMidnight.getTime() + 10 * 60 * 60 * 1000); // 10am PH
+    const breakOut = new Date(breakIn.getTime() + 75 * 60 * 1000); // 75 minutes later — over the 60-minute cap
+    const timeOut = new Date(phMidnight.getTime() + 17 * 60 * 60 * 1000); // 5pm PH
+
+    await TimeLog.create([
+      { organizationId, userId: member.userId, type: "time-in", timestamp: timeIn },
+      { organizationId, userId: member.userId, type: "break-in", timestamp: breakIn },
+      { organizationId, userId: member.userId, type: "break-out", timestamp: breakOut },
+      { organizationId, userId: member.userId, type: "time-out", timestamp: timeOut },
+    ]);
+
+    const month = `${breakDay.getFullYear()}-${String(breakDay.getMonth() + 1).padStart(2, "0")}`;
+    const res = await request(app)
+      .get(`/api/timeclock/calendar?month=${month}`)
+      .set("Authorization", `Bearer ${member.token}`);
+    expect(res.status).toBe(200);
+
+    const summary = res.body.data.find((d: { date: string }) => d.date === breakKey);
+    expect(summary.breakMinutes).toBe(75);
+    // Worked minutes only counts clocked-in time outside the break, so it must exclude the 75-minute break.
+    expect(summary.workedMinutes).toBe(480 - 75);
+  });
+
   it("marks a day covered by an approved leave as on-leave instead of absent", async () => {
     const { adminToken, member } = await setup();
     const now = new Date();

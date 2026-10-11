@@ -9,7 +9,13 @@ export interface DaySummary {
   firstTimeIn: Date | null;
   lastTimeOut: Date | null;
   workedMinutes: number;
+  // Time spent on break (break-in -> break-out) — the 60-minute cap in BREAK_LIMIT_MINUTES applies to it.
+  breakMinutes: number;
 }
+
+// Flagged red once a single break reaches this length; shown orange up to it. Matches the
+// UI/UX pattern from Suprah's own Timeproof (there it's 70 minutes — Catalyst's is 60).
+export const BREAK_LIMIT_MINUTES = 60;
 
 /** Expands approved leave date ranges into the set of PH-day keys they cover, clamped to [start, end]. */
 export function expandApprovedLeaveDays(
@@ -48,24 +54,28 @@ function accumulateInterval(minutesByDay: Map<string, number>, start: Date, end:
 }
 
 /**
- * Reconstructs worked minutes per PH calendar day from the full clock-event
- * stream (time-in/break/lunch pairs), pairing chronologically across the
- * whole log set rather than per-day buckets — a bucket-first pairing would
- * silently drop minutes for any session whose start/stop events land in
- * different PH-day buckets (e.g. a graveyard shift, or simply because the
- * events were recorded from a server/client in a different timezone).
+ * Reconstructs minutes-per-PH-calendar-day for any start/stop event pairing (worked time:
+ * time-in/break-out -> break-in/time-out; break time: break-in -> break-out), pairing
+ * chronologically across the whole log set rather than per-day buckets — a bucket-first
+ * pairing would silently drop minutes for any session whose start/stop events land in different
+ * PH-day buckets (e.g. a graveyard shift, or simply because the events were recorded from a
+ * server/client in a different timezone).
  */
-function computeMinutesByDay(logs: ITimeLog[]): Map<string, number> {
+function computeIntervalMinutesByDay(
+  logs: ITimeLog[],
+  startTypes: ITimeLog["type"][],
+  stopTypes: ITimeLog["type"][]
+): Map<string, number> {
   const sorted = [...logs].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
   const minutesByDay = new Map<string, number>();
-  let workStart: Date | null = null;
+  let intervalStart: Date | null = null;
 
   for (const log of sorted) {
-    if (log.type === "time-in" || log.type === "break-out" || log.type === "lunch-out") {
-      workStart = log.timestamp;
-    } else if ((log.type === "break-in" || log.type === "lunch-in" || log.type === "time-out") && workStart) {
-      accumulateInterval(minutesByDay, workStart, log.timestamp);
-      workStart = null;
+    if (startTypes.includes(log.type)) {
+      intervalStart = log.timestamp;
+    } else if (stopTypes.includes(log.type) && intervalStart) {
+      accumulateInterval(minutesByDay, intervalStart, log.timestamp);
+      intervalStart = null;
     }
   }
 
@@ -91,7 +101,8 @@ export function summarizeRange(
     if (existing) existing.push(log);
     else byDay.set(key, [log]);
   }
-  const minutesByDay = computeMinutesByDay(logs);
+  const minutesByDay = computeIntervalMinutesByDay(logs, ["time-in", "break-out"], ["break-in", "time-out"]);
+  const breakMinutesByDay = computeIntervalMinutesByDay(logs, ["break-in"], ["break-out"]);
 
   const today = phDateKey(new Date());
   const summaries: DaySummary[] = [];
@@ -122,6 +133,7 @@ export function summarizeRange(
       firstTimeIn: timeIns[0]?.timestamp ?? null,
       lastTimeOut: timeOuts[timeOuts.length - 1]?.timestamp ?? null,
       workedMinutes: Math.round(minutesByDay.get(key) ?? 0),
+      breakMinutes: Math.round(breakMinutesByDay.get(key) ?? 0),
     });
 
     cursor = phAddDays(cursor, 1);

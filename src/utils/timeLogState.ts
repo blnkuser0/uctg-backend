@@ -1,6 +1,6 @@
 import { TimeLogType } from "../models/TimeLog.model";
 
-export const CLOCK_STATES = ["clocked-out", "working", "on-break", "on-lunch"] as const;
+export const CLOCK_STATES = ["clocked-out", "working", "on-break"] as const;
 export type ClockState = (typeof CLOCK_STATES)[number];
 
 interface TimeLogLike {
@@ -18,20 +18,16 @@ export function computeClockState(logsSortedByTimestamp: TimeLogLike[]): ClockSt
       return "clocked-out";
     case "break-in":
       return "on-break";
-    case "lunch-in":
-      return "on-lunch";
     case "time-in":
     case "break-out":
-    case "lunch-out":
       return "working";
   }
 }
 
 const VALID_NEXT_TYPES: Record<ClockState, TimeLogType[]> = {
   "clocked-out": ["time-in"],
-  working: ["break-in", "lunch-in", "time-out"],
+  working: ["break-in", "time-out"],
   "on-break": ["break-out"],
-  "on-lunch": ["lunch-out"],
 };
 
 export function isValidTransition(currentState: ClockState, requestedType: TimeLogType): boolean {

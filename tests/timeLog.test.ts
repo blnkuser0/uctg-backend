@@ -24,7 +24,7 @@ describe("Timeproof clock", () => {
     expect(res.body.data.logs).toHaveLength(0);
   });
 
-  it("walks the full state machine: in -> break -> back -> lunch -> back -> out", async () => {
+  it("walks the full state machine: in -> break -> back -> out", async () => {
     const token = await loginAsAdmin();
     const auth = (r: request.Test) => r.set("Authorization", `Bearer ${token}`);
 
@@ -38,17 +38,11 @@ describe("Timeproof clock", () => {
     const breakOut = await auth(request(app).post("/api/timeclock/clock")).send({ type: "break-out" });
     expect(breakOut.body.data.state).toBe("working");
 
-    const lunchIn = await auth(request(app).post("/api/timeclock/clock")).send({ type: "lunch-in" });
-    expect(lunchIn.body.data.state).toBe("on-lunch");
-
-    const lunchOut = await auth(request(app).post("/api/timeclock/clock")).send({ type: "lunch-out" });
-    expect(lunchOut.body.data.state).toBe("working");
-
     const timeOut = await auth(request(app).post("/api/timeclock/clock")).send({ type: "time-out" });
     expect(timeOut.body.data.state).toBe("clocked-out");
 
     const today = await auth(request(app).get("/api/timeclock/today"));
-    expect(today.body.data.logs).toHaveLength(6);
+    expect(today.body.data.logs).toHaveLength(4);
   });
 
   it("rejects an invalid transition", async () => {

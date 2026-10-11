@@ -7,3 +7,4 @@ coverage/
 uploads/*
 !uploads/.gitkeep
 *.log
+reset-password.js

@@ -8,6 +8,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "dev:db": "ts-node --transpile-only src/scripts/local-mongo.ts",
     "bootstrap:platform": "ts-node --transpile-only src/scripts/bootstrap-platform.ts",
+    "migrate:accomplishments": "ts-node --transpile-only src/scripts/migrate-accomplishment-sections.ts",
     "fix:channel-index": "ts-node --transpile-only src/scripts/fix-channel-dm-index.ts",
     "build": "tsc",
     "start": "node dist/server.js",

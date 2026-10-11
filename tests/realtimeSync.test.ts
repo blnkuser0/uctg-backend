@@ -54,7 +54,7 @@ describe("Realtime data-changed pings", () => {
     spy.mockClear();
 
     await request(app).post("/api/timeclock/clock").set("Authorization", `Bearer ${admin.token}`).send({ type: "time-in" });
-    await request(app).post("/api/accomplishments").set("Authorization", `Bearer ${admin.token}`).send({ date: "2026-01-05", text: "Did a thing" });
+    await request(app).post("/api/accomplishments").set("Authorization", `Bearer ${admin.token}`).send({ date: "2026-01-05", accomplishment: "Did a thing" });
     await request(app).post("/api/roles").set("Authorization", `Bearer ${admin.token}`).send({ name: "Extra", permissions: [] });
 
     expect(resourcesPinged()).toEqual(expect.arrayContaining(["timeclock", "accomplishments", "roles"]));
