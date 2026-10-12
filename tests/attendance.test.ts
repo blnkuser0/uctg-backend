@@ -83,6 +83,45 @@ describe("Attendance calendar — personal", () => {
     expect(emptySummary.status).toBe(isWeekend(emptyDay) ? "weekend" : "absent");
   });
 
+  it("attributes a graveyard shift crossing midnight entirely to the day it started", async () => {
+    const { member } = await setup();
+    const now = new Date();
+    const shiftStartDay = new Date(now.getFullYear(), now.getMonth() - 1, 12);
+    const shiftEndDay = new Date(now.getFullYear(), now.getMonth() - 1, 13);
+
+    const usersRes = await request(app).get("/api/users").set("Authorization", `Bearer ${member.token}`);
+    const organizationId = usersRes.body.data[0].organizationId as string;
+
+    const startKey = `${shiftStartDay.getFullYear()}-${String(shiftStartDay.getMonth() + 1).padStart(2, "0")}-${String(shiftStartDay.getDate()).padStart(2, "0")}`;
+    const endKey = `${shiftEndDay.getFullYear()}-${String(shiftEndDay.getMonth() + 1).padStart(2, "0")}-${String(shiftEndDay.getDate()).padStart(2, "0")}`;
+
+    const startMidnight = parsePhDateKey(startKey);
+    const timeIn = new Date(startMidnight.getTime() + 21 * 60 * 60 * 1000); // 9pm PH on the start day
+    const timeOut = new Date(startMidnight.getTime() + (24 + 5) * 60 * 60 * 1000); // 5am PH the next day
+
+    await TimeLog.create([
+      { organizationId, userId: member.userId, type: "time-in", timestamp: timeIn },
+      { organizationId, userId: member.userId, type: "time-out", timestamp: timeOut },
+    ]);
+
+    const month = `${shiftStartDay.getFullYear()}-${String(shiftStartDay.getMonth() + 1).padStart(2, "0")}`;
+    const res = await request(app)
+      .get(`/api/timeclock/calendar?month=${month}`)
+      .set("Authorization", `Bearer ${member.token}`);
+    expect(res.status).toBe(200);
+
+    const startSummary = res.body.data.find((d: { date: string }) => d.date === startKey);
+    expect(startSummary.status).toBe("present");
+    expect(startSummary.workedMinutes).toBe(8 * 60); // 9pm -> 5am = 8 hours, all on the start day
+    expect(startSummary.lastTimeOut).not.toBeNull(); // shows the actual 5am end time, even though it's "tomorrow"
+
+    // The day the shift ENDED on must not also count as present/worked — only the day it
+    // started counts, so a graveyard shift doesn't prematurely eat into the next cut-off day.
+    const endSummary = res.body.data.find((d: { date: string }) => d.date === endKey);
+    expect(endSummary.status).toBe(isWeekend(shiftEndDay) ? "weekend" : "absent");
+    expect(endSummary.workedMinutes).toBe(0);
+  });
+
   it("computes break minutes for a day, separate from worked minutes", async () => {
     const { member } = await setup();
     const now = new Date();

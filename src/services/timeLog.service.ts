@@ -8,7 +8,30 @@ import { PeriodSummary, buildPeriodSummary, summaryWindow } from "../utils/atten
 import { PERMISSIONS } from "../constants/permissions";
 import { ApiError } from "../utils/ApiError";
 
+/**
+ * "Today's" clock events for state/UI purposes — but a graveyard shift that's still open
+ * (timed in before midnight, no time-out yet) must stay visible after midnight rolls over, or
+ * the user gets silently reset to "clocked-out" with no way to end a shift that's still actually
+ * running. So: if the most recent event is an open one (anything but time-out), return that
+ * whole session from its time-in onward, regardless of which PH day it started on; otherwise
+ * fall back to the plain "events since PH midnight" window.
+ */
 async function getTodayLogs(organizationId: string, userId: string): Promise<ITimeLog[]> {
+  const lastLog = await TimeLog.findOne({ organizationId, userId }).sort({ timestamp: -1 });
+
+  if (lastLog && lastLog.type !== "time-out") {
+    const sessionStart = await TimeLog.findOne({
+      organizationId,
+      userId,
+      type: "time-in",
+      timestamp: { $lte: lastLog.timestamp },
+    }).sort({ timestamp: -1 });
+
+    if (sessionStart) {
+      return TimeLog.find({ organizationId, userId, timestamp: { $gte: sessionStart.timestamp } }).sort({ timestamp: 1 });
+    }
+  }
+
   return TimeLog.find({
     organizationId,
     userId,
