@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { User, IUser } from "../models/User.model";
+import { ShiftType } from "../constants/shift";
 import { Role, IRole } from "../models/Role.model";
 import { Project } from "../models/Project.model";
 import { Task } from "../models/Task.model";
@@ -23,6 +24,7 @@ async function createUser(input: {
   password: string;
   roleId: string;
   organizationId: string;
+  shiftType?: ShiftType;
 }): Promise<UserWithRole> {
   const existing = await User.findOne({ email: input.email });
   if (existing) {
@@ -38,6 +40,7 @@ async function createUser(input: {
     mustChangePassword: true,
     roleId: input.roleId,
     organizationId: input.organizationId,
+    shiftType: input.shiftType,
   });
   return user.populate<{ roleId: IRole }>("roleId");
 }
@@ -64,7 +67,7 @@ async function getUserById(userId: string): Promise<UserWithRole> {
 async function updateUser(
   userId: string,
   organizationId: string,
-  updates: Partial<Pick<IUser, "name" | "isActive" | "avatarUrl">> & { roleId?: string }
+  updates: Partial<Pick<IUser, "name" | "isActive" | "avatarUrl" | "shiftType">> & { roleId?: string }
 ): Promise<UserWithRole> {
   if (updates.roleId) await assertRoleInOrg(organizationId, updates.roleId);
 

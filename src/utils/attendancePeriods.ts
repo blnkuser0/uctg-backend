@@ -1,6 +1,6 @@
 import { ITimeLog } from "../models/TimeLog.model";
 import { DaySummary, summarizeRange } from "./attendance";
-import { parsePhDateKey, phEndOfDay } from "./phTime";
+import { parsePhDateKey, phEndOfDay, PH_TIME_ZONE } from "./phTime";
 
 // Pure "YYYY-MM-DD" calendar math (UTC-based on purpose): a date key is a calendar label, not an
 // instant, so day-of-week / month-length math on it needs no timezone handling at all.
@@ -72,9 +72,15 @@ function statsFor(summaries: DaySummary[], range: PeriodRange): PeriodStats {
   };
 }
 
-/** Week + cut-off totals for one person, from their raw clock events covering `summaryWindow`. */
-export function buildPeriodSummary(logs: ITimeLog[], dateKey: string): PeriodSummary {
+/**
+ * Week + cut-off totals for one person, from their raw clock events covering `summaryWindow`.
+ * The week/cut-off date RANGES are always PH-calendar (the org's shared pay-period definition),
+ * but which day WITHIN that range a given shift's hours land on uses `timeZone` — a night-shift
+ * worker's own zone (constants/shift.ts), so their totals reflect the same per-day attribution
+ * their personal calendar shows.
+ */
+export function buildPeriodSummary(logs: ITimeLog[], dateKey: string, timeZone: string = PH_TIME_ZONE): PeriodSummary {
   const { start, end } = summaryWindow(dateKey);
-  const summaries = summarizeRange(start, end, logs);
+  const summaries = summarizeRange(start, end, logs, undefined, timeZone);
   return { week: statsFor(summaries, weekRange(dateKey)), cutoff: statsFor(summaries, cutoffRange(dateKey)) };
 }

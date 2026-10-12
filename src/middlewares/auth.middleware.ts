@@ -31,6 +31,7 @@ export const auth = () => {
         id: user._id.toString(),
         email: user.email,
         name: user.name,
+        shiftType: user.shiftType ?? "morning",
       };
       req.orgId = user.organizationId.toString();
       req.permissions = user.roleId?.permissions ?? [];

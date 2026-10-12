@@ -3,9 +3,11 @@ import { Leave } from "../models/Leave.model";
 import { User } from "../models/User.model";
 import { computeClockState, isValidTransition, ClockState } from "../utils/timeLogState";
 import { DaySummary, expandApprovedLeaveDays, summarizeRange } from "../utils/attendance";
-import { phStartOfDay, phEndOfDay, phMonthRange } from "../utils/phTime";
+import { PH_TIME_ZONE } from "../utils/phTime";
+import { zonedStartOfDayForKey, zonedEndOfDay, zonedMonthRange, zonedDateKey } from "../utils/zonedTime";
 import { PeriodSummary, buildPeriodSummary, summaryWindow } from "../utils/attendancePeriods";
 import { PERMISSIONS } from "../constants/permissions";
+import { ShiftType, shiftTimeZone } from "../constants/shift";
 import { ApiError } from "../utils/ApiError";
 
 /**
@@ -13,10 +15,10 @@ import { ApiError } from "../utils/ApiError";
  * (timed in before midnight, no time-out yet) must stay visible after midnight rolls over, or
  * the user gets silently reset to "clocked-out" with no way to end a shift that's still actually
  * running. So: if the most recent event is an open one (anything but time-out), return that
- * whole session from its time-in onward, regardless of which PH day it started on; otherwise
- * fall back to the plain "events since PH midnight" window.
+ * whole session from its time-in onward, regardless of which day it started on; otherwise fall
+ * back to the plain "events since the start of today" window, in the user's own shift timezone.
  */
-async function getTodayLogs(organizationId: string, userId: string): Promise<ITimeLog[]> {
+async function getTodayLogs(organizationId: string, userId: string, timeZone: string): Promise<ITimeLog[]> {
   const lastLog = await TimeLog.findOne({ organizationId, userId }).sort({ timestamp: -1 });
 
   if (lastLog && lastLog.type !== "time-out") {
@@ -35,25 +37,27 @@ async function getTodayLogs(organizationId: string, userId: string): Promise<ITi
   return TimeLog.find({
     organizationId,
     userId,
-    timestamp: { $gte: phStartOfDay() },
+    timestamp: { $gte: zonedStartOfDayForKey(zonedDateKey(new Date(), timeZone), timeZone) },
   }).sort({ timestamp: 1 });
 }
 
 async function getTodayWithState(
   organizationId: string,
-  userId: string
+  userId: string,
+  shiftType: ShiftType
 ): Promise<{ logs: ITimeLog[]; state: ClockState }> {
-  const logs = await getTodayLogs(organizationId, userId);
+  const logs = await getTodayLogs(organizationId, userId, shiftTimeZone(shiftType));
   return { logs, state: computeClockState(logs) };
 }
 
 async function clock(
   organizationId: string,
   userId: string,
+  shiftType: ShiftType,
   type: TimeLogType,
   note?: string
 ): Promise<{ log: ITimeLog; state: ClockState }> {
-  const logs = await getTodayLogs(organizationId, userId);
+  const logs = await getTodayLogs(organizationId, userId, shiftTimeZone(shiftType));
   const currentState = computeClockState(logs);
 
   if (!isValidTransition(currentState, type)) {
@@ -69,10 +73,12 @@ async function clock(
 async function getMonthSummary(
   organizationId: string,
   userId: string,
+  shiftType: ShiftType,
   year: number,
   month: number
 ): Promise<DaySummary[]> {
-  const { start, end } = phMonthRange(year, month);
+  const timeZone = shiftTimeZone(shiftType);
+  const { start, end } = zonedMonthRange(year, month, timeZone);
 
   const [logs, approvedLeaves] = await Promise.all([
     TimeLog.find({ organizationId, userId, timestamp: { $gte: start, $lte: end } }).sort({ timestamp: 1 }),
@@ -85,8 +91,8 @@ async function getMonthSummary(
     }),
   ]);
 
-  const approvedLeaveDays = expandApprovedLeaveDays(approvedLeaves, start, end);
-  return summarizeRange(start, end, logs, approvedLeaveDays);
+  const approvedLeaveDays = expandApprovedLeaveDays(approvedLeaves, start, end, timeZone);
+  return summarizeRange(start, end, logs, approvedLeaveDays, timeZone);
 }
 
 export interface TeamDayEntry {
@@ -95,14 +101,20 @@ export interface TeamDayEntry {
   summary: DaySummary;
 }
 
-async function getTeamDaySummary(organizationId: string, date: Date): Promise<TeamDayEntry[]> {
-  const dayStart = phStartOfDay(date);
-  const dayEnd = phEndOfDay(date);
+async function getTeamDaySummary(organizationId: string, dateKey: string): Promise<TeamDayEntry[]> {
+  // Wide enough to cover every shift timezone's version of this calendar date in one query —
+  // each user's own [dayStart, dayEnd) window (computed per-user below) narrows it back down.
+  const phStart = zonedStartOfDayForKey(dateKey, PH_TIME_ZONE);
+  const phEnd = zonedEndOfDay(phStart, PH_TIME_ZONE);
+  const nightStart = zonedStartOfDayForKey(dateKey, shiftTimeZone("night"));
+  const nightEnd = zonedEndOfDay(nightStart, shiftTimeZone("night"));
+  const windowStart = new Date(Math.min(phStart.getTime(), nightStart.getTime()));
+  const windowEnd = new Date(Math.max(phEnd.getTime(), nightEnd.getTime()));
 
   const [users, logs, approvedLeaves] = await Promise.all([
-    User.find({ organizationId, isActive: true }, { _id: 1, name: 1 }).sort({ name: 1 }),
-    TimeLog.find({ organizationId, timestamp: { $gte: dayStart, $lte: dayEnd } }).sort({ timestamp: 1 }),
-    Leave.find({ organizationId, status: "approved", startDate: { $lte: dayEnd }, endDate: { $gte: dayStart } }),
+    User.find({ organizationId, isActive: true }, { _id: 1, name: 1, shiftType: 1 }).sort({ name: 1 }),
+    TimeLog.find({ organizationId, timestamp: { $gte: windowStart, $lte: windowEnd } }).sort({ timestamp: 1 }),
+    Leave.find({ organizationId, status: "approved", startDate: { $lte: windowEnd }, endDate: { $gte: windowStart } }),
   ]);
 
   const logsByUser = new Map<string, ITimeLog[]>();
@@ -113,18 +125,21 @@ async function getTeamDaySummary(organizationId: string, date: Date): Promise<Te
     else logsByUser.set(key, [log]);
   }
 
-  // A single day's window, so this set is either empty or just { "that one date" }.
-  const leaveDayKey = expandApprovedLeaveDays(approvedLeaves, dayStart, dayEnd);
-  const onLeaveUserIds = new Set(approvedLeaves.map((l) => l.userId.toString()));
+  const leavesByUser = new Map<string, { startDate: Date; endDate: Date }[]>();
+  for (const leave of approvedLeaves) {
+    const key = leave.userId.toString();
+    const existing = leavesByUser.get(key);
+    if (existing) existing.push(leave);
+    else leavesByUser.set(key, [leave]);
+  }
 
   return users.map((user) => {
     const userId = user._id.toString();
-    const [summary] = summarizeRange(
-      dayStart,
-      dayEnd,
-      logsByUser.get(userId) ?? [],
-      onLeaveUserIds.has(userId) ? leaveDayKey : undefined
-    );
+    const timeZone = shiftTimeZone(user.shiftType ?? "morning");
+    const dayStart = zonedStartOfDayForKey(dateKey, timeZone);
+    const dayEnd = zonedEndOfDay(dayStart, timeZone);
+    const leaveDays = expandApprovedLeaveDays(leavesByUser.get(userId) ?? [], dayStart, dayEnd, timeZone);
+    const [summary] = summarizeRange(dayStart, dayEnd, logsByUser.get(userId) ?? [], leaveDays, timeZone);
     return { userId, name: user.name, summary };
   });
 }
@@ -135,16 +150,16 @@ export interface TeamPeriodEntry {
   summary: PeriodSummary;
 }
 
-async function getPeriodSummary(organizationId: string, userId: string, dateKey: string): Promise<PeriodSummary> {
+async function getPeriodSummary(organizationId: string, userId: string, shiftType: ShiftType, dateKey: string): Promise<PeriodSummary> {
   const { start, end } = summaryWindow(dateKey);
   const logs = await TimeLog.find({ organizationId, userId, timestamp: { $gte: start, $lte: end } }).sort({ timestamp: 1 });
-  return buildPeriodSummary(logs, dateKey);
+  return buildPeriodSummary(logs, dateKey, shiftTimeZone(shiftType));
 }
 
 async function getTeamPeriodSummary(organizationId: string, dateKey: string): Promise<TeamPeriodEntry[]> {
   const { start, end } = summaryWindow(dateKey);
   const [users, logs] = await Promise.all([
-    User.find({ organizationId, isActive: true }, { _id: 1, name: 1 }).sort({ name: 1 }),
+    User.find({ organizationId, isActive: true }, { _id: 1, name: 1, shiftType: 1 }).sort({ name: 1 }),
     TimeLog.find({ organizationId, timestamp: { $gte: start, $lte: end } }).sort({ timestamp: 1 }),
   ]);
 
@@ -158,7 +173,8 @@ async function getTeamPeriodSummary(organizationId: string, dateKey: string): Pr
 
   return users.map((user) => {
     const userId = user._id.toString();
-    return { userId, name: user.name, summary: buildPeriodSummary(logsByUser.get(userId) ?? [], dateKey) };
+    const timeZone = shiftTimeZone(user.shiftType ?? "morning");
+    return { userId, name: user.name, summary: buildPeriodSummary(logsByUser.get(userId) ?? [], dateKey, timeZone) };
   });
 }
 
@@ -181,10 +197,18 @@ async function resolveViewedUserId(
   return requestedUserId;
 }
 
+/** The shiftType governing a viewed user's attendance — the requester's own when self-viewing, else looked up. */
+async function resolveViewedShiftType(organizationId: string, viewedUserId: string, requesterShiftType: ShiftType, requesterId: string): Promise<ShiftType> {
+  if (viewedUserId === requesterId) return requesterShiftType;
+  const target = await User.findOne({ _id: viewedUserId, organizationId }, { shiftType: 1 });
+  return target?.shiftType ?? "morning";
+}
+
 export const timeLogService = {
   getPeriodSummary,
   getTeamPeriodSummary,
   resolveViewedUserId,
+  resolveViewedShiftType,
   getTodayWithState,
   clock,
   getMonthSummary,

@@ -16,6 +16,7 @@ export function toPublicUser(user: UserWithRole) {
     isActive: user.isActive,
     isSuperAdmin: user.isSuperAdmin === true,
     mustChangePassword: user.mustChangePassword === true,
+    shiftType: user.shiftType,
   };
 }
 

@@ -45,6 +45,29 @@ describe("User provisioning", () => {
     expect(res.body.data.email).toBe("mona@ugnexa.test");
   });
 
+  it("defaults a new user to the morning shift, and lets an admin assign the night shift", async () => {
+    const adminToken = await loginAsAdmin();
+    const memberRoleId = await createRole(adminToken, "Member");
+
+    const morning = await createMember(adminToken, memberRoleId, "morning@ugnexa.test");
+    expect(morning.status).toBe(201);
+    expect(morning.body.data.shiftType).toBe("morning");
+
+    const night = await request(app)
+      .post("/api/users")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Nora Night", email: "night@ugnexa.test", password: "supersecret2", roleId: memberRoleId, shiftType: "night" });
+    expect(night.status).toBe(201);
+    expect(night.body.data.shiftType).toBe("night");
+
+    const updated = await request(app)
+      .patch(`/api/users/${morning.body.data.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ shiftType: "night" });
+    expect(updated.status).toBe(200);
+    expect(updated.body.data.shiftType).toBe("night");
+  });
+
   it("blocks a plain-role user from creating another user", async () => {
     const adminToken = await loginAsAdmin();
     const memberRoleId = await createRole(adminToken, "Member");

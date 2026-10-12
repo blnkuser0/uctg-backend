@@ -213,3 +213,78 @@ describe("Attendance — team roster", () => {
     expect(forbidden.status).toBe(403);
   });
 });
+
+describe("Attendance — shift timezone (EST for night shift)", () => {
+  it("attributes a night-shift user's early-morning PHT shift to the previous EST calendar day", async () => {
+    const reg = await createTestOrgAndAdmin({
+      organizationName: "Night Co",
+      name: "Nadia Admin",
+      email: "nadia@ugnexa.test",
+      password: "supersecret1",
+    });
+    const adminLogin = await loginWithId("nadia@ugnexa.test", "supersecret1");
+    const roleId = await createRole(adminLogin.token, "Night Support");
+
+    const created = await request(app)
+      .post("/api/users")
+      .set("Authorization", `Bearer ${adminLogin.token}`)
+      .send({ name: "Nora Night", email: "nora@ugnexa.test", password: "supersecret2", roleId, shiftType: "night" });
+    expect(created.status).toBe(201);
+    expect(created.body.data.shiftType).toBe("night");
+    const night = await loginWithId("nora@ugnexa.test", "supersecret2");
+
+    // 2am-6am PHT on Jan 15, 2025 — PHT's midnight-to-1pm window falls within EST's PRIOR
+    // calendar day (EST, winter, is UTC-5; this instant converts to 1pm-5pm EST on Jan 14), so a
+    // night-shift user's own day boundary attributes the whole shift to Jan 14, not Jan 15.
+    const phMidnight = parsePhDateKey("2025-01-15");
+    const timeIn = new Date(phMidnight.getTime() + 2 * 60 * 60 * 1000); // 2am PHT Jan 15
+    const timeOut = new Date(phMidnight.getTime() + 6 * 60 * 60 * 1000); // 6am PHT Jan 15
+
+    await TimeLog.create([
+      { organizationId: reg.organizationId, userId: night.userId, type: "time-in", timestamp: timeIn },
+      { organizationId: reg.organizationId, userId: night.userId, type: "time-out", timestamp: timeOut },
+    ]);
+
+    const res = await request(app).get("/api/timeclock/calendar?month=2025-01").set("Authorization", `Bearer ${night.token}`);
+    expect(res.status).toBe(200);
+
+    const jan14 = res.body.data.find((d: { date: string }) => d.date === "2025-01-14");
+    const jan15 = res.body.data.find((d: { date: string }) => d.date === "2025-01-15");
+    expect(jan14.status).toBe("present");
+    expect(jan14.workedMinutes).toBe(4 * 60);
+    expect(jan15.status).not.toBe("present");
+  });
+
+  it("keeps an open graveyard shift visible as 'today' for a night-shift user too (EST day boundary)", async () => {
+    const reg = await createTestOrgAndAdmin({
+      organizationName: "Night Co 2",
+      name: "Nadia Admin",
+      email: "nadia2@ugnexa.test",
+      password: "supersecret1",
+    });
+    const adminLogin = await loginWithId("nadia2@ugnexa.test", "supersecret1");
+    const roleId = await createRole(adminLogin.token, "Night Support");
+    await request(app)
+      .post("/api/users")
+      .set("Authorization", `Bearer ${adminLogin.token}`)
+      .send({ name: "Nora Night", email: "nora2@ugnexa.test", password: "supersecret2", roleId, shiftType: "night" });
+    const night = await loginWithId("nora2@ugnexa.test", "supersecret2");
+
+    // Still-open shift that started well over a day ago (real wall-clock time) — simulates a
+    // night-shift worker who's still working, regardless of which zone's midnight has passed.
+    const timeIn = new Date(Date.now() - 20 * 60 * 60 * 1000);
+    await TimeLog.create({ organizationId: reg.organizationId, userId: night.userId, type: "time-in", timestamp: timeIn });
+
+    const today = await request(app).get("/api/timeclock/today").set("Authorization", `Bearer ${night.token}`);
+    expect(today.status).toBe(200);
+    expect(today.body.data.state).toBe("working");
+    expect(today.body.data.logs).toHaveLength(1);
+
+    const timeOut = await request(app)
+      .post("/api/timeclock/clock")
+      .set("Authorization", `Bearer ${night.token}`)
+      .send({ type: "time-out" });
+    expect(timeOut.status).toBe(201);
+    expect(timeOut.body.data.state).toBe("clocked-out");
+  });
+});

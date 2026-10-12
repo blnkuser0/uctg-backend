@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { Schema, model, Document, Types } from "mongoose";
 import { nextSequence } from "./Counter.model";
+import { SHIFT_TYPES, ShiftType } from "../constants/shift";
 
 export const EMPLOYEE_ID_PREFIX = "UGX";
 
@@ -46,6 +47,9 @@ export interface IUser extends Document {
   // the first time their ID card is requested.
   employeeId?: string;
   idToken?: string;
+  // Governs which timezone's midnight is used as their clock-in/out day boundary — see
+  // constants/shift.ts. Defaults to "morning"/PH time, the normal case.
+  shiftType: ShiftType;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -75,6 +79,7 @@ const UserSchema = new Schema<IUser>(
     mustChangePassword: { type: Boolean, default: false },
     employeeId: { type: String, unique: true, sparse: true },
     idToken: { type: String, unique: true, sparse: true, select: false },
+    shiftType: { type: String, enum: SHIFT_TYPES, default: "morning" },
   },
   { timestamps: true }
 );

@@ -28,6 +28,7 @@ function toPublicUser(user: {
   avatarUrl: string | null;
   isSuperAdmin?: boolean;
   mustChangePassword?: boolean;
+  shiftType?: string;
 }) {
   const isPopulated = !!user.roleId && typeof user.roleId === "object" && "name" in user.roleId;
   const role = isPopulated
@@ -47,6 +48,7 @@ function toPublicUser(user: {
     avatarUrl: user.avatarUrl,
     isSuperAdmin: user.isSuperAdmin === true,
     mustChangePassword: user.mustChangePassword === true,
+    shiftType: user.shiftType ?? "morning",
   };
 }
 
