@@ -98,6 +98,7 @@ async function getMonthSummary(
 export interface TeamDayEntry {
   userId: string;
   name: string;
+  shiftType: ShiftType;
   summary: DaySummary;
 }
 
@@ -135,18 +136,20 @@ async function getTeamDaySummary(organizationId: string, dateKey: string): Promi
 
   return users.map((user) => {
     const userId = user._id.toString();
-    const timeZone = shiftTimeZone(user.shiftType ?? "morning");
+    const shiftType = user.shiftType ?? "morning";
+    const timeZone = shiftTimeZone(shiftType);
     const dayStart = zonedStartOfDayForKey(dateKey, timeZone);
     const dayEnd = zonedEndOfDay(dayStart, timeZone);
     const leaveDays = expandApprovedLeaveDays(leavesByUser.get(userId) ?? [], dayStart, dayEnd, timeZone);
     const [summary] = summarizeRange(dayStart, dayEnd, logsByUser.get(userId) ?? [], leaveDays, timeZone);
-    return { userId, name: user.name, summary };
+    return { userId, name: user.name, shiftType, summary };
   });
 }
 
 export interface TeamPeriodEntry {
   userId: string;
   name: string;
+  shiftType: ShiftType;
   summary: PeriodSummary;
 }
 
@@ -173,8 +176,9 @@ async function getTeamPeriodSummary(organizationId: string, dateKey: string): Pr
 
   return users.map((user) => {
     const userId = user._id.toString();
-    const timeZone = shiftTimeZone(user.shiftType ?? "morning");
-    return { userId, name: user.name, summary: buildPeriodSummary(logsByUser.get(userId) ?? [], dateKey, timeZone) };
+    const shiftType = user.shiftType ?? "morning";
+    const timeZone = shiftTimeZone(shiftType);
+    return { userId, name: user.name, shiftType, summary: buildPeriodSummary(logsByUser.get(userId) ?? [], dateKey, timeZone) };
   });
 }
 
