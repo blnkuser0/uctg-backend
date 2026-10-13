@@ -5,7 +5,7 @@ import { channelService } from "../services/channel.service";
 import { emitToUser } from "../utils/socketEmitter";
 
 export const listChannels = asyncHandler(async (req: Request, res: Response) => {
-  const channels = await channelService.listMyChannels(req.orgId!, req.user!.id);
+  const channels = await channelService.listMyChannels(req.orgId!, req.user!.id, req.query.archived === "true");
   res.json(new ApiResponse(200, channels, "Channels"));
 });
 
@@ -52,6 +52,11 @@ export const setPinned = asyncHandler(async (req: Request, res: Response) => {
 export const setMuted = asyncHandler(async (req: Request, res: Response) => {
   await channelService.setMuted(req.params.id, req.user!.id, req.isSuperAdmin!, req.body.muted);
   res.json(new ApiResponse(200, null, req.body.muted ? "Muted" : "Unmuted"));
+});
+
+export const setArchived = asyncHandler(async (req: Request, res: Response) => {
+  await channelService.setArchived(req.params.id, req.user!.id, req.isSuperAdmin!, req.body.archived);
+  res.json(new ApiResponse(200, null, req.body.archived ? "Conversation archived" : "Conversation restored"));
 });
 
 export const hideDm = asyncHandler(async (req: Request, res: Response) => {

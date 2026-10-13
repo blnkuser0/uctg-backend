@@ -22,6 +22,9 @@ export interface IChannel extends Document {
   // Cleared automatically (for everyone who'd hidden it) the moment a new message arrives, or the
   // DM is re-initiated — same behavior as SupraSpace's per-user conversation delete.
   hiddenFor: Types.ObjectId[];
+  // Personal archive is deliberately separate from deletion and membership.  It lets a person
+  // keep a conversation's history without making any change to other members' lists.
+  archivedBy: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +43,7 @@ const ChannelSchema = new Schema<IChannel>(
     pinnedBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
     mutedBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
     hiddenFor: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    archivedBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
   },
   { timestamps: true }
 );

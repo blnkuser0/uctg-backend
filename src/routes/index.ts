@@ -20,6 +20,7 @@ import organizationRoute from "./organization.route";
 import platformRoute from "./platform.route";
 import publicRoute from "./public.route";
 import accomplishmentRoute from "./accomplishment.route";
+import fileRoute from "./file.route";
 
 const router = Router();
 
@@ -46,5 +47,6 @@ router.use("/organization", organizationRoute);
 router.use("/platform", platformRoute);
 router.use("/public", publicRoute);
 router.use("/accomplishments", accomplishmentRoute);
+router.use("/files", fileRoute);
 
 export default router;
