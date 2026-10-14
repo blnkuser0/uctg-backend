@@ -24,6 +24,7 @@ import { correlationIdMiddleware } from "./middlewares/correlationId.middleware"
 import { errorHandler } from "./middlewares/error.middleware";
 import { createSocketServer } from "./socket";
 import { deadlineReminderService } from "./services/deadlineReminder.service";
+import { messageService } from "./services/message.service";
 import healthRoute from "./routes/health.route";
 import routes from "./routes";
 
@@ -79,6 +80,11 @@ async function start(): Promise<void> {
   await connectDBWithRetry();
 
   deadlineReminderService.startDeadlineReminderSweep();
+  const scheduledMessageSweep = setInterval(() => {
+    void messageService.deliverDueScheduledMessages().catch((err) => logger.error({ err }, "Scheduled message delivery failed"));
+  }, 15_000);
+  scheduledMessageSweep.unref();
+  void messageService.deliverDueScheduledMessages().catch((err) => logger.error({ err }, "Initial scheduled message delivery failed"));
 }
 
 async function shutdown(signal: string): Promise<void> {

@@ -16,8 +16,15 @@ export const listForChannel = asyncHandler(async (req: Request, res: Response) =
 
 export const createMessage = asyncHandler(async (req: Request, res: Response) => {
   const message = await messageService.createMessage(req.params.id, req.user!.id, req.isSuperAdmin!, req.body);
-  emitToChannel(req.params.id, "chat:message:created", { channelId: req.params.id, message });
-  res.status(201).json(new ApiResponse(201, message, "Message sent"));
+  if (message.scheduledStatus !== "pending") {
+    emitToChannel(req.params.id, "chat:message:created", { channelId: req.params.id, message });
+  }
+  res.status(201).json(new ApiResponse(201, message, message.scheduledStatus === "pending" ? "Message scheduled" : "Message sent"));
+});
+
+export const listScheduled = asyncHandler(async (req: Request, res: Response) => {
+  const messages = await messageService.listScheduled(req.params.id, req.user!.id, req.isSuperAdmin!);
+  res.json(new ApiResponse(200, messages, "Scheduled messages"));
 });
 
 export const addAttachments = asyncHandler(async (req: Request, res: Response) => {

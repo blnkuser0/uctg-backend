@@ -81,6 +81,41 @@ describe("Direct messages", () => {
   });
 });
 
+describe("Catalyst Space lifecycle", () => {
+  it("keeps a personal archive out of the active list and makes it read-only until restored", async () => {
+    const { admin, member } = await setup();
+    const dm = await request(app).post("/api/channels/dm").set("Authorization", `Bearer ${admin.token}`).send({ userId: member.userId });
+    const channelId = dm.body.data._id as string;
+
+    await request(app).post(`/api/channels/${channelId}/archive`).set("Authorization", `Bearer ${admin.token}`).send({ archived: true }).expect(200);
+    const active = await request(app).get("/api/channels").set("Authorization", `Bearer ${admin.token}`);
+    const archived = await request(app).get("/api/channels?archived=true").set("Authorization", `Bearer ${admin.token}`);
+    expect(active.body.data.some((channel: { _id: string }) => channel._id === channelId)).toBe(false);
+    expect(archived.body.data.some((channel: { _id: string }) => channel._id === channelId)).toBe(true);
+
+    await request(app).post(`/api/channels/${channelId}/messages`).set("Authorization", `Bearer ${admin.token}`).send({ message: "Blocked" }).expect(403);
+    await request(app).post(`/api/channels/${channelId}/archive`).set("Authorization", `Bearer ${admin.token}`).send({ archived: false }).expect(200);
+    await request(app).post(`/api/channels/${channelId}/messages`).set("Authorization", `Bearer ${admin.token}`).send({ message: "Back again" }).expect(201);
+  });
+
+  it("returns the original message for an idempotent retry and keeps scheduled messages private", async () => {
+    const { admin, member } = await setup();
+    const dm = await request(app).post("/api/channels/dm").set("Authorization", `Bearer ${admin.token}`).send({ userId: member.userId });
+    const channelId = dm.body.data._id as string;
+    const payload = { message: "Exactly once", clientMessageId: "retry-key-0001" };
+    const first = await request(app).post(`/api/channels/${channelId}/messages`).set("Authorization", `Bearer ${admin.token}`).send(payload).expect(201);
+    const retry = await request(app).post(`/api/channels/${channelId}/messages`).set("Authorization", `Bearer ${admin.token}`).send(payload).expect(201);
+    expect(retry.body.data._id).toBe(first.body.data._id);
+
+    const scheduledFor = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await request(app).post(`/api/channels/${channelId}/messages`).set("Authorization", `Bearer ${admin.token}`).send({ message: "Later", scheduledFor }).expect(201);
+    const normal = await request(app).get(`/api/channels/${channelId}/messages`).set("Authorization", `Bearer ${member.token}`);
+    const scheduled = await request(app).get(`/api/channels/${channelId}/scheduled-messages`).set("Authorization", `Bearer ${admin.token}`);
+    expect(normal.body.data.some((message: { message: string }) => message.message === "Later")).toBe(false);
+    expect(scheduled.body.data).toHaveLength(1);
+  });
+});
+
 describe("Group channels", () => {
   it("creates a group, adds and removes a member", async () => {
     const { admin, member, other } = await setup();

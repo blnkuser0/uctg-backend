@@ -14,11 +14,16 @@ function buildDmKey(userIdA: string, userIdB: string): string {
 // that's always the VIEWER's own org, consistently on both the read and
 // write (markRead) side — not a resource-identity filter, so it isn't the
 // same bug.
-async function listMyChannels(organizationId: string, userId: string) {
+async function listMyChannels(organizationId: string, userId: string, includeArchived = false) {
   // hiddenFor excludes a channel the viewer has "deleted" from their own list — it isn't gone for
   // anyone else, and reappears for them the moment there's new activity (see createMessage /
   // getOrCreateDm below), same as the conversation-delete this mirrors.
-  const channels = await Channel.find({ memberIds: userId, deletedAt: null, hiddenFor: { $ne: userId } })
+  const channels = await Channel.find({
+    memberIds: userId,
+    deletedAt: null,
+    hiddenFor: { $ne: userId },
+    ...(includeArchived ? { archivedBy: userId } : { archivedBy: { $ne: userId } }),
+  })
     .populate("memberIds", "name avatarUrl")
     .sort({ lastMessageAt: -1, createdAt: -1 });
 
@@ -45,6 +50,7 @@ async function listMyChannels(organizationId: string, userId: string) {
         unreadCount: read?.manualUnread ? Math.max(unreadCount, 1) : unreadCount,
         pinned,
         muted,
+        archived: channel.archivedBy.some((id) => id.toString() === userId),
       };
     })
   );
@@ -87,6 +93,26 @@ async function setMuted(channelId: string, userId: string, isSuperAdmin: boolean
     await Channel.updateOne({ _id: channel._id }, { $addToSet: { mutedBy: userId } });
   } else {
     await Channel.updateOne({ _id: channel._id }, { $pull: { mutedBy: userId } });
+  }
+}
+
+async function setArchived(channelId: string, userId: string, isSuperAdmin: boolean, archived: boolean): Promise<void> {
+  const channel = await assertChannelAccess(channelId, userId, isSuperAdmin);
+  if (archived) {
+    await Channel.updateOne({ _id: channel._id }, { $addToSet: { archivedBy: userId } });
+    // A scheduled send is still a write. Cancelling the caller's pending sends keeps archive
+    // genuinely read-only instead of surprising them with a message sent later from the worker.
+    await Message.updateMany({ channelId: channel._id, userId, scheduledStatus: "pending" }, { $set: { scheduledStatus: "cancelled" } });
+  } else {
+    await Channel.updateOne({ _id: channel._id }, { $pull: { archivedBy: userId } });
+  }
+}
+
+// Archive is a personal, read-only state. Enforce it here, at the shared service boundary, so a
+// stale tab or future endpoint cannot accidentally write into an archived conversation.
+function assertChannelWritable(channel: IChannel, userId: string): void {
+  if (channel.archivedBy.some((id) => id.toString() === userId)) {
+    throw ApiError.forbidden("Unarchive this conversation before sending or changing messages");
   }
 }
 
@@ -247,12 +273,14 @@ export const channelService = {
   markUnread,
   setPinned,
   setMuted,
+  setArchived,
   hideDm,
   getOrCreateDm,
   createGroup,
   updateGroup,
   deleteGroup,
   assertChannelAccess,
+  assertChannelWritable,
   createProjectChannel,
   addProjectMember,
   removeProjectMember,

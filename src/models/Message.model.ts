@@ -35,6 +35,9 @@ export interface IMessage extends Document {
   authorName: string;
   authorAvatar: string | null;
   message: string;
+  // A client-generated key makes retrying an uncertain request safe.  It is scoped to its
+  // author and channel, so different people can legitimately use the same UUID.
+  clientMessageId: string | null;
   mentions: Types.ObjectId[];
   attachments: IAttachment[];
   reactions: IMessageReaction[];
@@ -45,6 +48,8 @@ export interface IMessage extends Document {
   pinnedAt: Date | null;
   pinnedBy: Types.ObjectId | null;
   isEdited: boolean;
+  scheduledFor: Date | null;
+  scheduledStatus: "pending" | "dispatching" | "sent" | "cancelled";
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -58,6 +63,7 @@ const MessageSchema = new Schema<IMessage>(
     authorName: { type: String, required: true },
     authorAvatar: { type: String, default: null },
     message: { type: String, trim: true, maxlength: 10000, default: "" },
+    clientMessageId: { type: String, default: null, maxlength: 80 },
     mentions: [{ type: Schema.Types.ObjectId, ref: "User" }],
     attachments: { type: [AttachmentSchema], default: [] },
     reactions: { type: [ReactionSchema], default: [] },
@@ -65,12 +71,19 @@ const MessageSchema = new Schema<IMessage>(
     pinnedAt: { type: Date, default: null },
     pinnedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     isEdited: { type: Boolean, default: false },
+    scheduledFor: { type: Date, default: null },
+    scheduledStatus: { type: String, enum: ["pending", "dispatching", "sent", "cancelled"], default: "sent" },
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
 
 MessageSchema.index({ channelId: 1, deletedAt: 1, createdAt: -1 });
+MessageSchema.index(
+  { channelId: 1, userId: 1, clientMessageId: 1 },
+  { unique: true, partialFilterExpression: { clientMessageId: { $type: "string" } } }
+);
+MessageSchema.index({ scheduledStatus: 1, scheduledFor: 1 });
 MessageSchema.index({ mentions: 1, deletedAt: 1, createdAt: -1 });
 // `pinnedAt` defaults to `null` (not "missing") on every message, same as `Channel.dmKey` — see
 // the long comment on that index for why `sparse: true` wouldn't actually exclude the unpinned

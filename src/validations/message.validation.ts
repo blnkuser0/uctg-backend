@@ -8,6 +8,10 @@ export const createMessageSchema = z.object({
   // The message being replied to, if any — must be in the same channel (checked in the service,
   // where the channel is already known).
   replyToId: objectId.optional(),
+  clientMessageId: z.string().trim().min(8).max(80).optional(),
+  // A scheduled message must be in the future.  The service repeats this check because direct
+  // callers (attachments and jobs) do not pass through HTTP validation.
+  scheduledFor: z.coerce.date().refine((value) => value.getTime() > Date.now(), "Scheduled time must be in the future").optional(),
 });
 
 export const updateMessageSchema = z.object({

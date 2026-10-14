@@ -1,11 +1,12 @@
 import { FilterQuery, Types } from "mongoose";
 import { Message, IMessage } from "../models/Message.model";
+import { IChannel, Channel } from "../models/Channel.model";
 import { IAttachment } from "../models/Task.model";
 import { User } from "../models/User.model";
 import { channelService } from "./channel.service";
 import { notificationService } from "./notification.service";
 import { ApiError } from "../utils/ApiError";
-import { emitToUser } from "../utils/socketEmitter";
+import { emitToChannel, emitToUser } from "../utils/socketEmitter";
 
 export interface ReplyPreview {
   _id: string;
@@ -14,7 +15,11 @@ export interface ReplyPreview {
   isDeleted: boolean;
 }
 
-export type MessageWithReplyPreview = ReturnType<IMessage["toObject"]> & { replyPreview: ReplyPreview | null };
+export type MessageWithReplyPreview = ReturnType<IMessage["toObject"]> & {
+  replyPreview: ReplyPreview | null;
+  scheduledFor: Date | null;
+  scheduledStatus: "pending" | "dispatching" | "sent" | "cancelled";
+};
 
 // Batches the lookup of every quoted message in a page at once (instead of one query per reply),
 // and returns a live snapshot rather than a copy frozen at reply-time — editing the original
@@ -47,7 +52,7 @@ async function listForChannel(
 
   // No organizationId filter — channelId already scopes this correctly, and
   // the channel's own org may differ from the caller's.
-  const query: FilterQuery<IMessage> = { channelId, deletedAt: null };
+  const query: FilterQuery<IMessage> = { channelId, deletedAt: null, scheduledStatus: { $ne: "pending" } };
   if (opts.before) query.createdAt = { $lt: opts.before };
   const limit = Math.min(opts.limit ?? 50, 100);
 
@@ -59,9 +64,24 @@ async function createMessage(
   channelId: string,
   userId: string,
   isSuperAdmin: boolean,
-  input: { message: string; mentions?: string[]; attachments?: IAttachment[]; replyToId?: string }
+  input: {
+    message: string;
+    mentions?: string[];
+    attachments?: IAttachment[];
+    replyToId?: string;
+    clientMessageId?: string;
+    scheduledFor?: Date;
+  }
 ): Promise<MessageWithReplyPreview> {
   const channel = await channelService.assertChannelAccess(channelId, userId, isSuperAdmin);
+  channelService.assertChannelWritable(channel, userId);
+
+  // The UI keeps this key when retrying an unknown network result. Returning the already-created
+  // message makes retries safe without relying on timing or a client-side guess.
+  if (input.clientMessageId) {
+    const existing = await Message.findOne({ channelId, userId, clientMessageId: input.clientMessageId });
+    if (existing) return (await attachReplyPreviews([existing]))[0];
+  }
   const author = await User.findById(userId);
   if (!author) throw ApiError.notFound("User not found");
 
@@ -75,21 +95,43 @@ async function createMessage(
   }
 
   const mentions = [...new Set(input.mentions ?? [])].filter((id) => id !== userId);
+  const scheduledFor = input.scheduledFor ? new Date(input.scheduledFor) : null;
+  if (scheduledFor && scheduledFor.getTime() <= Date.now()) throw ApiError.badRequest("Scheduled time must be in the future");
 
   // Stamp with the channel's own org, not the acting user's.
-  const created = await Message.create({
-    organizationId: channel.organizationId,
-    channelId,
-    userId,
-    authorName: author.name,
-    authorAvatar: author.avatarUrl,
-    message: input.message,
-    mentions,
-    attachments: input.attachments ?? [],
-    replyToId,
-  });
+  let created: IMessage;
+  try {
+    created = await Message.create({
+      organizationId: channel.organizationId,
+      channelId,
+      userId,
+      authorName: author.name,
+      authorAvatar: author.avatarUrl,
+      message: input.message,
+      clientMessageId: input.clientMessageId ?? null,
+      mentions,
+      attachments: input.attachments ?? [],
+      replyToId,
+      scheduledFor,
+      scheduledStatus: scheduledFor ? "pending" : "sent",
+    });
+  } catch (error) {
+    // The preflight lookup above handles ordinary retries. This catches two identical requests
+    // that race between lookup and insert, and returns the winning message instead of surfacing
+    // a duplicate-key error to the user.
+    if (input.clientMessageId && typeof error === "object" && error && "code" in error && error.code === 11000) {
+      const existing = await Message.findOne({ channelId, userId, clientMessageId: input.clientMessageId });
+      if (existing) return (await attachReplyPreviews([existing]))[0];
+    }
+    throw error;
+  }
 
-  channel.lastMessageAt = new Date();
+  if (!scheduledFor) await publishMessage(created, channel);
+  return (await attachReplyPreviews([created]))[0];
+}
+
+async function publishMessage(created: IMessage, channel: IChannel): Promise<void> {
+  channel.lastMessageAt = created.createdAt;
   // New activity un-hides the conversation for anyone who'd deleted it — same as SupraSpace, a
   // "delete conversation" only clears it from your own list, not a real end to the conversation.
   // Tell those specific members live, since they won't be subscribed to this channel's room to
@@ -99,39 +141,81 @@ async function createMessage(
   await channel.save();
   resurrectedFor.forEach((memberId) => emitToUser(memberId, "chat:channel:updated", { channelId: channel._id.toString() }));
 
+  const isMutedFor = (recipientId: string) => channel.mutedBy.some((id) => id.toString() === recipientId);
   if (channel.type === "dm") {
-    const otherMemberId = channel.memberIds.map((id) => id.toString()).find((id) => id !== userId);
-    if (otherMemberId) {
+    const otherMemberId = channel.memberIds.map((id) => id.toString()).find((id) => id !== created.userId.toString());
+    if (otherMemberId && !isMutedFor(otherMemberId)) {
       await notificationService.createNotification({
         userId: otherMemberId,
         type: "dm_message",
         channelId: channel._id.toString(),
         messageId: created._id.toString(),
-        actorId: userId,
-        actorName: author.name,
-        title: `${author.name} sent you a message`,
-        message: input.message.slice(0, 200),
+        actorId: created.userId.toString(),
+        actorName: created.authorName,
+        title: `${created.authorName} sent you a message`,
+        message: created.message.slice(0, 200),
       });
     }
-  } else if (mentions.length > 0) {
+  } else if (created.mentions.length > 0) {
     await Promise.all(
-      mentions.map((mentionedUserId) =>
-        notificationService.createNotification({
-          userId: mentionedUserId,
+      created.mentions
+        .map((mentionedUserId) => mentionedUserId.toString())
+        .filter((mentionedUserId) => !isMutedFor(mentionedUserId))
+        .map((mentionedUserId) =>
+          notificationService.createNotification({
+          userId: mentionedUserId.toString(),
           type: "message_mention",
           channelId: channel._id.toString(),
           messageId: created._id.toString(),
-          actorId: userId,
-          actorName: author.name,
-          title: `${author.name} mentioned you in ${channel.name ?? "a channel"}`,
-          message: input.message.slice(0, 200),
-        })
-      )
+          actorId: created.userId.toString(),
+          actorName: created.authorName,
+          title: `${created.authorName} mentioned you in ${channel.name ?? "a channel"}`,
+          message: created.message.slice(0, 200),
+          })
+        )
     );
   }
+}
 
-  const [withPreview] = await attachReplyPreviews([created]);
-  return withPreview;
+async function listScheduled(channelId: string, userId: string, isSuperAdmin: boolean): Promise<MessageWithReplyPreview[]> {
+  await channelService.assertChannelAccess(channelId, userId, isSuperAdmin);
+  const messages = await Message.find({ channelId, userId, scheduledStatus: "pending", deletedAt: null }).sort({ scheduledFor: 1 });
+  return attachReplyPreviews(messages);
+}
+
+// Claim each message atomically so multiple Node instances can run this sweep without double
+// delivery. A failed publish goes back to pending rather than silently disappearing.
+async function deliverDueScheduledMessages(): Promise<number> {
+  let delivered = 0;
+  while (true) {
+    const message = await Message.findOneAndUpdate(
+      { scheduledStatus: "pending", scheduledFor: { $lte: new Date() }, deletedAt: null },
+      { $set: { scheduledStatus: "dispatching" } },
+      { new: true }
+    );
+    if (!message) return delivered;
+
+    const channel = await Channel.findOne({ _id: message.channelId, deletedAt: null });
+    if (!channel) {
+      await Message.updateOne({ _id: message._id }, { $set: { scheduledStatus: "cancelled" } });
+      continue;
+    }
+    if (channel.archivedBy.some((id) => id.toString() === message.userId.toString())) {
+      await Message.updateOne({ _id: message._id }, { $set: { scheduledStatus: "cancelled" } });
+      continue;
+    }
+    try {
+      await publishMessage(message, channel);
+      message.scheduledStatus = "sent";
+      await message.save();
+      const deliveredMessage = (await attachReplyPreviews([message]))[0];
+      emitToChannel(channel._id.toString(), "chat:message:created", { channelId: channel._id.toString(), message: deliveredMessage });
+      delivered += 1;
+    } catch (error) {
+      await Message.updateOne({ _id: message._id }, { $set: { scheduledStatus: "pending" } });
+      throw error;
+    }
+  }
 }
 
 // Own-message-only, by construction — no org check needed (same reasoning
@@ -145,6 +229,8 @@ async function getOwnMessage(messageId: string, userId: string): Promise<IMessag
 
 async function updateMessage(messageId: string, userId: string, text: string): Promise<IMessage> {
   const message = await getOwnMessage(messageId, userId);
+  const channel = await channelService.assertChannelAccess(message.channelId.toString(), userId, false);
+  channelService.assertChannelWritable(channel, userId);
   message.message = text;
   message.isEdited = true;
   await message.save();
@@ -153,6 +239,8 @@ async function updateMessage(messageId: string, userId: string, text: string): P
 
 async function deleteMessage(messageId: string, userId: string): Promise<IMessage> {
   const message = await getOwnMessage(messageId, userId);
+  const channel = await channelService.assertChannelAccess(message.channelId.toString(), userId, false);
+  channelService.assertChannelWritable(channel, userId);
   message.deletedAt = new Date();
   await message.save();
   return message;
@@ -182,6 +270,8 @@ async function getMessageForChannelAccess(messageId: string, userId: string, isS
 // reaction bar never shows a lingering "0".
 async function reactToMessage(messageId: string, userId: string, isSuperAdmin: boolean, emoji: string): Promise<IMessage> {
   const message = await getMessageForChannelAccess(messageId, userId, isSuperAdmin);
+  const channel = await channelService.assertChannelAccess(message.channelId.toString(), userId, isSuperAdmin);
+  channelService.assertChannelWritable(channel, userId);
 
   const group = message.reactions.find((r) => r.emoji === emoji);
   if (!group) {
@@ -204,6 +294,8 @@ async function reactToMessage(messageId: string, userId: string, isSuperAdmin: b
 
 async function togglePinMessage(messageId: string, userId: string, isSuperAdmin: boolean): Promise<IMessage> {
   const message = await getMessageForChannelAccess(messageId, userId, isSuperAdmin);
+  const channel = await channelService.assertChannelAccess(message.channelId.toString(), userId, isSuperAdmin);
+  channelService.assertChannelWritable(channel, userId);
 
   if (message.pinnedAt) {
     message.pinnedAt = null;
@@ -238,6 +330,8 @@ async function searchInChannel(
 
 export const messageService = {
   listForChannel,
+  listScheduled,
+  deliverDueScheduledMessages,
   createMessage,
   updateMessage,
   deleteMessage,

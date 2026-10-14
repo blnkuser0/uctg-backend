@@ -35,6 +35,10 @@ export const setPinnedSchema = z.object({
   pinned: z.boolean(),
 });
 
+export const setArchivedSchema = z.object({
+  archived: z.boolean(),
+});
+
 export const setMutedSchema = z.object({
   muted: z.boolean(),
 });
