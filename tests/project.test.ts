@@ -107,6 +107,9 @@ describe("Projects", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ name: "Team Project" });
 
+    // Membership alone no longer grants workspace access (that now requires tasks.manage or
+    // projects.manage — see taskAccessControl.test.ts) — this test just covers the add/remove
+    // mechanics themselves, via the memberIds array in each response.
     const memberRoleId = await createRole(adminToken, "Member", []);
     const other = await createUserWithRole(adminToken, memberRoleId, "teammate@ugnexa.test", "supersecret2");
 
@@ -117,20 +120,11 @@ describe("Projects", () => {
     expect(addRes.status).toBe(200);
     expect(addRes.body.data.memberIds).toContain(other.id);
 
-    const accessRes = await request(app)
-      .get(`/api/projects/${project.body.data._id}`)
-      .set("Authorization", `Bearer ${other.token}`);
-    expect(accessRes.status).toBe(200);
-
     const removeRes = await request(app)
       .delete(`/api/projects/${project.body.data._id}/members/${other.id}`)
       .set("Authorization", `Bearer ${adminToken}`);
     expect(removeRes.status).toBe(200);
-
-    const blockedRes = await request(app)
-      .get(`/api/projects/${project.body.data._id}`)
-      .set("Authorization", `Bearer ${other.token}`);
-    expect(blockedRes.status).toBe(403);
+    expect(removeRes.body.data.memberIds).not.toContain(other.id);
   });
 
   it("updates and soft-deletes a project", async () => {

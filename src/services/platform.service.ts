@@ -5,6 +5,7 @@ import { User, IUser } from "../models/User.model";
 import { registerOrganization } from "./auth.service";
 import { userService, UserWithRole } from "./user.service";
 import { projectService } from "./project.service";
+import { PERMISSIONS } from "../constants/permissions";
 import { ApiError } from "../utils/ApiError";
 
 const DEVELOPER_ROLE_NAME = "Developer";
@@ -18,7 +19,11 @@ async function getDevelopersOrg(): Promise<IOrganization> {
 async function getOrCreateDeveloperRole(devsOrgId: string): Promise<IRole> {
   let role = await Role.findOne({ organizationId: devsOrgId, name: DEVELOPER_ROLE_NAME });
   if (!role) {
-    role = await Role.create({ organizationId: devsOrgId, name: DEVELOPER_ROLE_NAME, permissions: [] });
+    // tasks.manage by default: the entire point of assigning a developer to a client project is
+    // for them to actually work in its workspace (board, task creation, etc.), not just get the
+    // narrow own-task carve-out. An admin can still dial this back later via the Roles page —
+    // this only sets the starting point the first time this shared role is created.
+    role = await Role.create({ organizationId: devsOrgId, name: DEVELOPER_ROLE_NAME, permissions: [PERMISSIONS.TASKS_MANAGE] });
   }
   return role;
 }

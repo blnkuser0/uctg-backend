@@ -86,14 +86,21 @@ async function listAllProjectsPlatformWide(): Promise<IProject[]> {
 }
 
 /**
- * Loads a project and enforces access. Three independent ways in:
- *  - direct membership (works regardless of org — this is how a Developers-org
- *    developer accesses a client project they've been assigned to)
- *  - projects.manage, but ONLY within the caller's own org — this must stay
- *    org-scoped: without the org-equality check here, a projects.manage
- *    holder in one client org would gain access to every OTHER client org's
- *    projects the moment the query-level org filter below was dropped
- *  - isSuperAdmin — a separate, genuinely platform-wide bypass
+ * Loads a project and enforces WORKSPACE access — the full board/list/reports/settings,
+ * stage/label/member management, and task creation/reassignment. Requires tasks.manage or
+ * projects.manage, AND one of:
+ *  - the project belongs to the caller's own org (the normal case: a permission holder gets
+ *    every project in their own org) — without this org check, a permission holder in one
+ *    client org would reach every OTHER client org's projects
+ *  - the caller is already a member of this SPECIFIC project, even though it belongs to a
+ *    different org (the cross-org-assignment path: a Developers-org developer with
+ *    tasks.manage, added to one client project, gets full workspace access to THAT project —
+ *    never a blanket bypass into every other project in that foreign org)
+ * isSuperAdmin remains a separate, genuinely platform-wide bypass.
+ *
+ * Plain membership WITHOUT tasks.manage/projects.manage no longer grants workspace access on
+ * its own (as it used to) — an ordinary assignee without the permission only gets their own
+ * tasks; see task.service.ts's getTaskForAccess for that narrower own-task carve-out.
  */
 async function assertProjectAccess(
   organizationId: string,
@@ -105,12 +112,13 @@ async function assertProjectAccess(
   const project = await Project.findOne({ _id: projectId, deletedAt: null });
   if (!project) throw ApiError.notFound("Project not found");
 
+  const hasManagePermission = permissions.includes(PERMISSIONS.TASKS_MANAGE) || permissions.includes(PERMISSIONS.PROJECTS_MANAGE);
+  const sameOrg = project.organizationId.toString() === organizationId;
   const isMember = project.memberIds.some((id) => id.toString() === userId);
-  const canManageOwnOrg =
-    permissions.includes(PERMISSIONS.PROJECTS_MANAGE) && project.organizationId.toString() === organizationId;
+  const canManage = hasManagePermission && (sameOrg || isMember);
 
-  if (!isMember && !canManageOwnOrg && !isSuperAdmin) {
-    throw ApiError.forbidden("You are not a member of this project");
+  if (!canManage && !isSuperAdmin) {
+    throw ApiError.forbidden("You do not have access to this project's workspace");
   }
   return project;
 }

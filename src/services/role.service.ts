@@ -22,7 +22,8 @@ async function createRole(
 async function listRoles(organizationId: string): Promise<RoleWithUserCount[]> {
   const roles = await Role.find({ organizationId }).sort({ createdAt: 1 });
   const counts = await User.aggregate<{ _id: Types.ObjectId; count: number }>([
-    { $match: { organizationId: new Types.ObjectId(organizationId) } },
+    // Match the employee directory: deactivated accounts remain, deleted ones do not.
+    { $match: { organizationId: new Types.ObjectId(organizationId), deletedAt: null } },
     { $group: { _id: "$roleId", count: { $sum: 1 } } },
   ]);
   const countByRoleId = new Map(counts.map((c) => [c._id.toString(), c.count]));
@@ -85,7 +86,7 @@ async function updateRole(
 async function deleteRole(organizationId: string, roleId: string): Promise<void> {
   const role = await getByIdInOrg(organizationId, roleId);
 
-  const assignedCount = await User.countDocuments({ organizationId, roleId: role._id });
+  const assignedCount = await User.countDocuments({ organizationId, roleId: role._id, deletedAt: null });
   if (assignedCount > 0) {
     throw ApiError.conflict(`${assignedCount} user(s) still have this role — reassign them first`);
   }

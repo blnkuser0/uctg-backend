@@ -39,6 +39,12 @@ export const listTasksQuerySchema = z.object({
   priority: z.enum(TASK_PRIORITIES).optional(),
   q: z.string().trim().max(200).optional(),
   includeSubtasks: z.coerce.boolean().optional(),
+  // Not z.coerce.boolean(): Boolean("false") is true in JS, so that would silently treat
+  // ?completed=false the same as ?completed=true.
+  completed: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "true")),
 });
 
 export const createSubtaskSchema = z.object({

@@ -44,6 +44,13 @@ export const getTask = asyncHandler(async (req: Request, res: Response) => {
     req.permissions!,
     req.isSuperAdmin!
   );
+  await taskService.markTaskSeen(task._id.toString(), req.user!.id);
+  // Reflect the just-recorded "seen" in this response too, so the caller doesn't need a second
+  // fetch to see it — markTaskSeen above updates the DB directly (atomic $addToSet) without
+  // reloading this in-memory doc.
+  if (!task.seenBy.some((id) => id.toString() === req.user!.id)) {
+    task.seenBy.push(req.user!.id as unknown as never);
+  }
   res.json(new ApiResponse(200, task, "Task"));
 });
 

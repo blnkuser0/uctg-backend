@@ -22,8 +22,8 @@ async function createDevelopersOrg() {
   });
 }
 
-async function createDeveloper(devsOrgId: string, email: string) {
-  const role = await Role.create({ organizationId: devsOrgId, name: `Member-${email}`, permissions: [] });
+async function createDeveloper(devsOrgId: string, email: string, permissions: string[] = []) {
+  const role = await Role.create({ organizationId: devsOrgId, name: `Member-${email}`, permissions });
   const passwordHash = await bcrypt.hash("supersecret1", 10);
   const user = await User.create({
     name: "Dev Doe",
@@ -89,7 +89,9 @@ describe("Cross-org access control", () => {
       password: "supersecret1",
     });
     const clientAdmin = await login(client.email, "supersecret1");
-    const dev = await createDeveloper(devsOrg._id.toString(), "dev@ugnexa.test");
+    // tasks.manage: full cross-org workspace access (board/stages/labels/tasks/comments/time/
+    // report) now requires it — plain membership alone only covers the task-ownership carve-out.
+    const dev = await createDeveloper(devsOrg._id.toString(), "dev@ugnexa.test", ["tasks.manage"]);
 
     const project = await createProject(clientAdmin.token, "Client Project");
 

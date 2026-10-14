@@ -38,6 +38,19 @@ interface ListTasksFilters {
   priority?: TaskPriority;
   q?: string;
   includeSubtasks?: boolean;
+  completed?: boolean;
+}
+
+/** Resets "who's seen this" to just the actor — used on every meaningful task change, so
+ *  everyone else involved sees an unread indicator until they reopen it. */
+function resetSeenToActor(task: ITask, actorId: string): void {
+  task.seenBy = [new Types.ObjectId(actorId)];
+}
+
+/** Marks a single viewer as having seen a task, without disturbing anyone else's seen state —
+ *  used only on an explicit single-task fetch, never from a list/bulk endpoint. */
+async function markTaskSeen(taskId: string, viewerId: string): Promise<void> {
+  await Task.updateOne({ _id: taskId }, { $addToSet: { seenBy: new Types.ObjectId(viewerId) } });
 }
 
 async function listTasks(
@@ -59,6 +72,8 @@ async function listTasks(
   if (filters.labelId) query.labelIds = filters.labelId;
   if (filters.priority) query.priority = filters.priority;
   if (!filters.includeSubtasks) query.parentTaskId = null;
+  if (filters.completed === true) query.completedAt = { $ne: null };
+  if (filters.completed === false) query.completedAt = null;
   if (filters.q) {
     const regex = new RegExp(filters.q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
     query.title = regex;
@@ -119,13 +134,21 @@ async function createTask(
     estimateMinutes: input.estimateMinutes ?? null,
     order,
     createdBy: userId,
+    // The creator "acted," so they start off having seen it — everyone else sees the unread
+    // indicator until they open it.
+    seenBy: [userId],
   });
 
   await notifyNewAssignees(task, userId, input.assigneeIds ?? []);
   return task;
 }
 
-async function getTaskForAccess(
+/**
+ * Strict workspace-level access to a task — no ownership carve-out. Used by operations that
+ * must stay tasks.manage/projects.manage/Super-Admin-only even for the task's own assignee:
+ * reassigning, retitling/reprioritizing/relabeling/redating, deleting, or creating (sub)tasks.
+ */
+async function getTaskForWorkspaceAccess(
   organizationId: string,
   taskId: string,
   userId: string,
@@ -141,6 +164,32 @@ async function getTaskForAccess(
   return task;
 }
 
+/**
+ * Task access with an own-task carve-out: a plain assignee or creator (no tasks.manage) can
+ * still view, comment on, move the stage of, check off items on, and attach files to a task
+ * that's theirs, even without full project-workspace access. Everyone else needs workspace
+ * access (tasks.manage/projects.manage/Super Admin) as usual.
+ */
+async function getTaskForAccess(
+  organizationId: string,
+  taskId: string,
+  userId: string,
+  permissions: Permission[],
+  isSuperAdmin: boolean
+): Promise<ITask> {
+  const task = await Task.findOne({ _id: taskId, deletedAt: null });
+  if (!task) throw ApiError.notFound("Task not found");
+
+  const isOwnTask = task.assigneeIds.some((id) => id.toString() === userId) || task.createdBy.toString() === userId;
+
+  try {
+    await projectService.assertProjectAccess(organizationId, task.projectId.toString(), userId, permissions, isSuperAdmin);
+  } catch (err) {
+    if (!isOwnTask) throw err;
+  }
+  return task;
+}
+
 async function updateTask(
   organizationId: string,
   taskId: string,
@@ -151,9 +200,10 @@ async function updateTask(
     Pick<ITask, "title" | "description" | "priority" | "assigneeIds" | "labelIds" | "startDate" | "deadline" | "estimateMinutes">
   >
 ): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
+  const task = await getTaskForWorkspaceAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   const previousAssigneeIds = task.assigneeIds.map((id) => id.toString());
   Object.assign(task, updates);
+  resetSeenToActor(task, userId);
   await task.save();
 
   if (updates.assigneeIds) {
@@ -173,7 +223,7 @@ async function deleteTask(
   permissions: Permission[],
   isSuperAdmin: boolean
 ): Promise<ITask> {
-  const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
+  const task = await getTaskForWorkspaceAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   task.deletedAt = new Date();
   await task.save();
   return task;
@@ -197,6 +247,7 @@ async function moveTask(
   if (stage.isDoneStage && !task.completedAt) task.completedAt = new Date();
   if (!stage.isDoneStage) task.completedAt = null;
 
+  resetSeenToActor(task, userId);
   await task.save();
   return task;
 }
@@ -209,7 +260,7 @@ async function createSubtask(
   isSuperAdmin: boolean,
   input: { title: string; description?: string; priority?: TaskPriority | null; assigneeIds?: string[] }
 ): Promise<ITask> {
-  const parent = await getTaskForAccess(organizationId, parentTaskId, userId, permissions, isSuperAdmin);
+  const parent = await getTaskForWorkspaceAccess(organizationId, parentTaskId, userId, permissions, isSuperAdmin);
 
   return createTask(organizationId, parent.projectId.toString(), userId, permissions, isSuperAdmin, {
     stageId: parent.stageId.toString(),
@@ -250,6 +301,7 @@ async function addChecklistItem(
     completedAt: null,
   });
   task.checklistProgress = computeChecklistProgress(task.checklist);
+  resetSeenToActor(task, userId);
   await task.save();
   return task;
 }
@@ -275,6 +327,7 @@ async function updateChecklistItem(
   }
 
   task.checklistProgress = computeChecklistProgress(task.checklist);
+  resetSeenToActor(task, userId);
   await task.save();
   return task;
 }
@@ -290,6 +343,7 @@ async function deleteChecklistItem(
   const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   task.checklist = task.checklist.filter((i) => i._id.toString() !== itemId);
   task.checklistProgress = computeChecklistProgress(task.checklist);
+  resetSeenToActor(task, userId);
   await task.save();
   return task;
 }
@@ -323,6 +377,7 @@ async function addAttachment(
 ): Promise<ITask> {
   const task = await getTaskForAccess(organizationId, taskId, userId, permissions, isSuperAdmin);
   task.attachments.push(file);
+  resetSeenToActor(task, userId);
   await task.save();
   return task;
 }
@@ -339,6 +394,7 @@ async function removeAttachment(
   const before = task.attachments.length;
   task.attachments = task.attachments.filter((a) => a.fileKey !== fileKey);
   const removedKey = task.attachments.length < before ? fileKey : null;
+  resetSeenToActor(task, userId);
   await task.save();
   return { task, removedKey };
 }
@@ -355,6 +411,9 @@ export const taskService = {
   listMyTasks,
   createTask,
   getTaskForAccess,
+  getTaskForWorkspaceAccess,
+  resetSeenToActor,
+  markTaskSeen,
   updateTask,
   deleteTask,
   moveTask,

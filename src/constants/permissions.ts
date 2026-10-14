@@ -5,6 +5,7 @@ export const PERMISSIONS = {
   USERS_MANAGE: "users.manage",
   ROLES_MANAGE: "roles.manage",
   PROJECTS_MANAGE: "projects.manage",
+  TASKS_MANAGE: "tasks.manage",
   ATTENDANCE_VIEW_ALL: "attendance.view_all",
   ORG_MANAGE: "org.manage",
   ACCOMPLISHMENTS_MANAGE: "accomplishments.manage",

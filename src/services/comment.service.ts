@@ -31,6 +31,9 @@ async function createComment(
   const author = await User.findById(userId);
   if (!author) throw ApiError.notFound("User not found");
 
+  taskService.resetSeenToActor(task, userId);
+  await task.save();
+
   const mentions = [...new Set(input.mentions ?? [])].filter((id) => id !== userId);
 
   // Stamp with the task's own org, not the acting user's — see task.service.ts's createTask.

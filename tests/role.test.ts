@@ -21,6 +21,48 @@ async function getAdminRoleId(adminToken: string) {
 }
 
 describe("Roles & permissions", () => {
+  it("matches the employee directory after deletion, deactivation, and role reassignment", async () => {
+    const token = await loginAsAdmin();
+    const authorization = `Bearer ${token}`;
+    const role = await request(app).post("/api/roles").set("Authorization", authorization)
+      .send({ name: "Web Dev", permissions: [] });
+    const roleId = role.body.data.id;
+    const ids: string[] = [];
+    for (let index = 0; index < 3; index++) {
+      const created = await request(app).post("/api/users").set("Authorization", authorization)
+        .send({ name: `Developer ${index}`, email: `dev${index}@ugnexa.test`, roleId });
+      expect(created.status).toBe(201);
+      ids.push(created.body.data.id);
+    }
+    const count = async () => {
+      const response = await request(app).get("/api/roles").set("Authorization", authorization);
+      expect(response.status).toBe(200);
+      return response.body.data.find((entry: { id: string }) => entry.id === roleId).userCount;
+    };
+    expect(await count()).toBe(3);
+    for (const id of ids.slice(1)) {
+      const removed = await request(app).delete(`/api/users/${id}/permanent`).set("Authorization", authorization);
+      expect(removed.status).toBe(200);
+    }
+    expect(await count()).toBe(1);
+    const users = await request(app).get("/api/users").set("Authorization", authorization);
+    expect(users.body.data.filter((user: { role: { id: string } }) => user.role.id === roleId)).toHaveLength(1);
+
+    const deactivated = await request(app).delete(`/api/users/${ids[0]}`).set("Authorization", authorization);
+    expect(deactivated.status).toBe(200);
+    expect(await count()).toBe(1);
+    const blocked = await request(app).delete(`/api/roles/${roleId}`).set("Authorization", authorization);
+    expect(blocked.status).toBe(409);
+
+    const reassigned = await request(app).patch(`/api/users/${ids[0]}`).set("Authorization", authorization)
+      .send({ roleId: await getAdminRoleId(token) });
+    expect(reassigned.status).toBe(200);
+    expect(await count()).toBe(0);
+    // Deleted historical users must not prevent deleting a now-empty role.
+    const removedRole = await request(app).delete(`/api/roles/${roleId}`).set("Authorization", authorization);
+    expect(removedRole.status).toBe(200);
+  });
+
   it("seeds an 'Admin' role with every permission at registration", async () => {
     const adminToken = await loginAsAdmin();
     const res = await request(app).get("/api/roles").set("Authorization", `Bearer ${adminToken}`);
@@ -133,6 +175,43 @@ describe("Roles & permissions", () => {
       .send({ permissions: ["leaves.approve_hr"] });
 
     expect(res.status).toBe(200);
+  });
+
+  it("lets a permissions-only PATCH succeed without touching the role's name", async () => {
+    const adminToken = await loginAsAdmin();
+    const roleRes = await request(app)
+      .post("/api/roles")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Keep My Name", permissions: [] });
+
+    const res = await request(app)
+      .patch(`/api/roles/${roleRes.body.data.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ permissions: ["tasks.manage"] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.name).toBe("Keep My Name");
+    expect(res.body.data.permissions).toEqual(["tasks.manage"]);
+  });
+
+  it("round-trips tasks.manage through create, list, and update like any other permission", async () => {
+    const adminToken = await loginAsAdmin();
+    const created = await request(app)
+      .post("/api/roles")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Task Lead", permissions: ["tasks.manage"] });
+    expect(created.status).toBe(201);
+    expect(created.body.data.permissions).toEqual(["tasks.manage"]);
+
+    const list = await request(app).get("/api/roles").set("Authorization", `Bearer ${adminToken}`);
+    expect(list.body.data.find((r: { id: string }) => r.id === created.body.data.id).permissions).toEqual(["tasks.manage"]);
+
+    const updated = await request(app)
+      .patch(`/api/roles/${created.body.data.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ permissions: [] });
+    expect(updated.status).toBe(200);
+    expect(updated.body.data.permissions).toEqual([]);
   });
 
   it("blocks a non-roles.manage user from touching /roles at all", async () => {
